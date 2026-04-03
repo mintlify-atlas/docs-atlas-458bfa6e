@@ -1,0 +1,90 @@
+---
+title: "firemon"
+description: "Reference for firemon, the monitoring tool for Firejail sandboxes."
+---
+
+## Synopsis
+
+```bash
+firemon [OPTIONS] [PID]
+```
+
+## Description
+
+`firemon` monitors programs started in a Firejail sandbox. Without a PID specified, all processes started by Firejail are monitored, including their descendants. On Grsecurity systems, only the root user can run this program.
+
+## Options
+
+| Option | Description |
+|--------|-------------|
+| `--apparmor` | Print AppArmor confinement status for each sandbox. |
+| `--arp` | Print the ARP table for each sandbox. |
+| `--caps` | Print capabilities configuration for each sandbox. |
+| `--cpu` | Print CPU affinity for each sandbox. |
+| `--list` | List all active sandboxes. |
+| `--name=name` | Print information only about the named sandbox. |
+| `--netstats` | Monitor network statistics for sandboxes with a new network namespace. |
+| `--route` | Print the route table for each sandbox. |
+| `--seccomp` | Print seccomp configuration for each sandbox. Also shows filters from `--memory-deny-write-execute`, `--protocol`, and `--restrict-namespaces`. |
+| `--top` | Live top-like monitor of the most CPU-intensive sandboxes. |
+| `--tree` | Print a process tree of all sandboxed processes. |
+| `--x11` | Print the X11 display number for each sandbox. |
+| `--wrap` | Enable line wrapping. By default, lines are trimmed to terminal width. |
+| `--debug` | Print debug messages. |
+| `--version` | Print program version and exit. |
+| `-?`, `--help` | Print options and exit. |
+
+## Output format
+
+Each sandbox entry is displayed in the format:
+
+```
+PID:USER:Sandbox Name:Command
+```
+
+### Column reference for `--top` and `--netstats`
+
+| Column | Description |
+|--------|-------------|
+| `PID` | Process ID of the sandbox controller process. |
+| `USER` | Owner of the sandbox. |
+| `Sandbox Name` | The name assigned with `--name=`, if any. |
+| `Command` | Command used to start the sandbox. |
+| `CPU%` | CPU usage as a percentage since the last update. |
+| `Prcs` | Number of processes running inside the sandbox. |
+| `RES` | Resident memory size (KiB) — sum across all sandbox processes. |
+| `SHR` | Shared memory size (KiB) — sum across all sandbox processes. |
+| `Uptime` | Sandbox running time in `hh:mm:ss` format. |
+| `RX(KB/s)` | Network receive speed. |
+| `TX(KB/s)` | Network transmit speed. |
+
+## Examples
+
+```bash
+# List all running sandboxes
+firemon --list
+
+# Live CPU monitor (like top, but for sandboxes)
+firemon --top
+
+# Show network stats for sandboxes with private network
+firemon --netstats
+
+# Show seccomp filter details for all sandboxes
+firemon --seccomp
+
+# Show capabilities for a specific sandbox by PID
+firemon --caps 1234
+
+# Show process tree
+firemon --tree
+
+# Monitor only a named sandbox
+firemon --name=browser --top
+```
+
+## See also
+
+- [firejail](/reference/firejail) — the main sandbox command
+- [firecfg](/reference/firecfg) — desktop integration
+- [jailcheck](/reference/jailcheck) — compliance testing

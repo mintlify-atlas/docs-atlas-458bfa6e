@@ -1,0 +1,137 @@
+---
+title: "firecfg"
+description: "Reference for firecfg, the desktop integration utility for Firejail."
+---
+
+## Synopsis
+
+```bash
+firecfg [OPTIONS]
+sudo firecfg [OPTIONS]
+```
+
+## Description
+
+`firecfg` is the desktop integration utility for Firejail. It automatically sandboxes applications by creating symbolic links in `/usr/local/bin` that point to `firejail`. When you launch an application (from the terminal, desktop menu, or file manager), the symlink causes it to be sandboxed automatically.
+
+The integration covers:
+
+- Programs started in a terminal — typing `firefox` is enough to start a sandboxed Firefox
+- Programs started from desktop manager menus — all major desktop managers are supported
+- Programs started by clicking file icons in the file manager — supported in Cinnamon, KDE, LXDE/LXQt, MATE, and XFCE
+
+Running `sudo firecfg` by default:
+1. Creates or updates symbolic links for all supported applications
+2. Adds the current user to the Firejail user access database
+3. Fixes `.desktop` files in `~/.local/share/applications/`
+4. Loads the AppArmor `firejail-default` profile (if AppArmor is enabled)
+
+## Options
+
+| Option | Description |
+|--------|-------------|
+| *(no options)* | Perform all default actions (run as root with `sudo`). |
+| `--add-users user [user ...]` | Add users to the Firejail user access database. |
+| `--bindir=directory` | Create symlinks in a custom directory instead of `/usr/local/bin`. |
+| `--clean` | Remove all Firejail symlinks from `/usr/local/bin`. |
+| `--fix` | Fix `.desktop` files in `~/.local/share/applications/` for the current user. |
+| `--fix-sound` | Create `~/.config/pulse/client.conf` to disable PulseAudio shared memory (fixes PID namespace issues on PulseAudio < 9). |
+| `--guide` | Run guided interactive configuration for new users. |
+| `--list` | List all active Firejail symlinks. |
+| `--debug` | Print debug messages. |
+| `--version` | Print program version and exit. |
+| `-?`, `--help` | Print options and exit. |
+
+## Setup
+
+<Steps>
+  <Step title="Fix PulseAudio (optional)">
+    If you use PulseAudio older than version 9, run this first to avoid audio issues:
+
+    ```bash
+    firecfg --fix-sound
+    ```
+
+    Log out and back in for the change to take effect.
+  </Step>
+  <Step title="Run desktop integration">
+    ```bash
+    sudo firecfg
+    ```
+
+    This creates symlinks for all supported applications. Example output:
+
+    ```console
+    /usr/local/bin/firefox created
+    /usr/local/bin/vlc created
+    /usr/local/bin/transmission-gtk created
+    ...
+    ```
+  </Step>
+  <Step title="Verify integration">
+    ```bash
+    firecfg --list
+    ```
+
+    ```console
+    /usr/local/bin/firefox
+    /usr/local/bin/vlc
+    /usr/local/bin/transmission-gtk
+    ...
+    ```
+  </Step>
+</Steps>
+
+## Configuration file syntax
+
+The list of applications to integrate is controlled by configuration files. Rules:
+
+- Lines starting with `#` are comments
+- Lines starting with `!PROGRAM` exclude that program from symlink creation
+- All other lines are treated as program names to integrate
+
+Configuration files are read in this order:
+1. `/etc/firejail/firecfg.d/*.conf` (alphabetical order)
+2. `/etc/firejail/firecfg.config`
+3. `~/.config/firejail/*.profile` — any profile found here causes firecfg to attempt creating a symlink for that program name
+
+<Tip>
+  Leave `/etc/firejail/firecfg.config` as-is and put all customizations in `/etc/firejail/firecfg.d/`.
+</Tip>
+
+### Example: custom configuration
+
+```bash /etc/firejail/firecfg.d/10-custom.conf
+# Exclude firefox and patch from integration
+!firefox
+!patch
+
+# Add a custom application
+myprog
+```
+
+### Handling .desktop file name mismatches
+
+Some applications use different names for the executable and the `.desktop` file. To handle both:
+
+```bash
+# Spectacle: executable is 'spectacle', desktop file is 'org.kde.spectacle'
+!org.kde.spectacle
+!spectacle
+```
+
+## Removing integration
+
+To uninstall Firejail desktop integration, remove the symlinks first:
+
+```bash
+sudo firecfg --clean
+```
+
+Then uninstall the package as normal. Broken symlinks are ignored when searching `$PATH`, so uninstalling without `--clean` is safe but leaves stale symlinks.
+
+## See also
+
+- [firejail](/reference/firejail) — the main sandbox command
+- [firemon](/reference/firemon) — sandbox monitoring
+- [Desktop integration guide](/guides/desktop-integration) — detailed desktop setup guide

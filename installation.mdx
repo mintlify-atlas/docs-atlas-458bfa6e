@@ -1,0 +1,246 @@
+---
+title: "Installation"
+description: "Install Firejail on your Linux distribution from a package manager or build it from source."
+---
+
+Firejail runs on any Linux system with a 3.x kernel or newer. The recommended approach is to install the latest released version rather than the version bundled with your distribution, as distro packages are often several releases behind.
+
+<Tip>
+  After installing, run `firejail --version` to confirm the installation succeeded and to check which optional features are compiled in.
+</Tip>
+
+## Install from a package manager
+
+<Tabs>
+  <Tab title="Debian / Ubuntu">
+    <Warning>
+      The firejail packages in Debian stable and Ubuntu's main repositories are often significantly outdated and may contain unfixed security vulnerabilities. The project recommends installing the latest `.deb` from the releases page or building from source instead.
+    </Warning>
+
+    **Recommended: install the latest release package**
+
+    Download and install the `.deb` package from the latest release:
+
+    ```bash
+    # Download the latest .deb from https://github.com/netblue30/firejail/releases/latest
+    sudo dpkg -i firejail_*.deb
+    ```
+
+    **Alternative: Ubuntu PPA (Ubuntu 18.04+ and derivatives)**
+
+    ```bash
+    sudo add-apt-repository ppa:deki/firejail
+    sudo apt-get update
+    sudo apt-get install firejail firejail-profiles
+    ```
+
+    <Note>
+      The PPA is more up to date than the Ubuntu archive but may still lag behind the latest upstream release.
+    </Note>
+  </Tab>
+  <Tab title="Fedora / RHEL">
+    Firejail is available in the Fedora repositories. Install it with:
+
+    ```bash
+    sudo dnf install firejail
+    ```
+
+    For the latest version, build from source using the Fedora-specific instructions below.
+  </Tab>
+  <Tab title="Arch Linux">
+    The `firejail` package is available in the Arch community repository:
+
+    ```bash
+    sudo pacman -S firejail
+    ```
+
+    To track the development version, install the AUR package `firejail-git`:
+
+    ```bash
+    yay -S firejail-git
+    ```
+
+    <Note>
+      The AUR package is not maintained by the Firejail project team.
+    </Note>
+  </Tab>
+  <Tab title="Other distributions">
+    Firejail is packaged for many Linux distributions. Check your distribution's package manager:
+
+    ```bash
+    # openSUSE
+    sudo zypper install firejail
+
+    # Void Linux
+    sudo xbps-install firejail
+
+    # Alpine Linux
+    sudo apk add firejail
+    ```
+
+    As long as your distribution provides a [supported version](https://github.com/netblue30/firejail/blob/master/SECURITY.md), installing from the distribution is generally fine. Use `firejail --version` to verify.
+  </Tab>
+</Tabs>
+
+## Build from source
+
+Building from source gives you the latest version and lets you enable optional features. The project provides distribution-specific build scripts that produce native packages, which makes integration with your system's package manager easier.
+
+### Debian / Ubuntu
+
+<Steps>
+  <Step title="Install build dependencies">
+    ```bash
+    sudo apt-get update -qy
+    sudo apt-get install -qy \
+      git build-essential fakeroot lintian libapparmor-dev pkg-config gawk
+    ```
+  </Step>
+  <Step title="Clone the repository">
+    ```bash
+    git clone 'https://github.com/netblue30/firejail.git'
+    cd firejail
+    ```
+  </Step>
+  <Step title="Build and install the .deb package">
+    ```bash
+    ./configure
+    make dist
+    ./mkdeb.sh
+    sudo dpkg -i ./*.deb
+    make installcheck
+    ```
+
+    <Note>
+      Pass any `./configure` flags directly to `mkdeb.sh` instead, for example: `./mkdeb.sh --enable-apparmor`.
+    </Note>
+  </Step>
+</Steps>
+
+### Fedora / RHEL
+
+<Steps>
+  <Step title="Install build dependencies">
+    ```bash
+    sudo dnf update -y
+    sudo dnf install -y rpm-build gcc make
+    ```
+  </Step>
+  <Step title="Clone the repository">
+    ```bash
+    git clone 'https://github.com/netblue30/firejail.git'
+    cd firejail
+    ```
+  </Step>
+  <Step title="Build and install the .rpm package">
+    ```bash
+    ./configure
+    make dist
+    ./platform/rpm/mkrpm.sh
+    sudo rpm -i ./*.rpm
+    make installcheck
+    ```
+
+    <Note>
+      Pass any `./configure` flags directly to `mkrpm.sh`, for example: `./platform/rpm/mkrpm.sh --enable-selinux`.
+    </Note>
+  </Step>
+</Steps>
+
+### Generic (any distribution)
+
+<Steps>
+  <Step title="Install build dependencies">
+    You need `git`, `gcc`, `make`, and the kernel seccomp header (`/usr/include/linux/seccomp.h`). On Debian/Ubuntu:
+
+    ```bash
+    sudo apt-get install git build-essential
+    ```
+  </Step>
+  <Step title="Clone the repository">
+    ```bash
+    git clone 'https://github.com/netblue30/firejail.git'
+    cd firejail
+    ```
+  </Step>
+  <Step title="Configure, build, and install">
+    ```bash
+    ./configure
+    make -j "$(nproc)"
+    sudo make install-strip
+    make installcheck
+    ```
+  </Step>
+</Steps>
+
+### Configure options
+
+Pass these flags to `./configure` to enable optional features:
+
+| Flag | Description | Typical use |
+|---|---|---|
+| `--enable-apparmor` | Enable AppArmor integration | Debian, Ubuntu, openSUSE |
+| `--enable-selinux` | Enable SELinux label support | Fedora, RHEL |
+| `--disable-suid` | Install as non-SUID executable | Environments where SUID is restricted |
+| `--disable-network` | Disable network namespace support | Minimal builds |
+| `--disable-x11` | Disable X11 sandboxing support | Headless systems |
+| `--enable-force-nonewprivs` | Always enforce no-new-privileges | High-security environments |
+
+**AppArmor build example:**
+
+```bash
+sudo apt-get install git build-essential libapparmor-dev pkg-config gawk
+./configure --enable-apparmor
+make -j "$(nproc)"
+sudo make install-strip
+```
+
+**SELinux build example:**
+
+```bash
+sudo dnf install libselinux-devel
+./configure --enable-selinux
+make -j "$(nproc)"
+sudo make install-strip
+```
+
+## Verify the installation
+
+After installing, confirm the version and check available features:
+
+```bash
+firejail --version
+```
+
+The output lists the version number and all compiled-in features. For example:
+
+```console
+$ firejail --version
+firejail version 0.9.80
+
+Compile time support:
+	- AppArmor support is enabled
+	- D-Bus proxy support is enabled
+	- file transfer support is enabled
+	- Landlock support is enabled
+	- network support is enabled
+	- private home support is enabled
+	- SELinux support is disabled
+	- user namespace support is enabled
+	- X11 sandboxing support is enabled
+```
+
+## Desktop integration with firecfg
+
+After installing Firejail, run `firecfg` to integrate it with your desktop environment. This creates symlinks in `/usr/local/bin` so that all supported applications automatically launch inside a sandbox when started from a launcher, file manager, or menu.
+
+```bash
+firecfg --fix-sound
+sudo firecfg
+```
+
+Log out and back in after running `firecfg --fix-sound` for PulseAudio changes to take effect. See the [quickstart guide](/quickstart) for a walkthrough of desktop integration.
+
+<Note>
+  `firecfg` covers over 900 applications. To see the full list, check `/etc/firejail/firecfg.config` after installation.
+</Note>

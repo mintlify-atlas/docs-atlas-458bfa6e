@@ -1,0 +1,248 @@
+---
+title: "Security profiles"
+description: "Understand how Firejail security profiles work, where they live, and how to write your own."
+---
+
+A security profile is a text file containing Firejail directives that define the sandbox environment for a specific application. Profiles control filesystem access, network access, Linux capabilities, seccomp filters, and more.
+
+## Profile file locations
+
+Firejail searches for profiles in two directories:
+
+| Directory | Purpose |
+|-----------|---------|
+| `~/.config/firejail/` | Per-user profiles. Take precedence over system profiles. |
+| `/etc/firejail/` | System-wide profiles. Shipped and updated with the Firejail package. |
+
+Profile files use the naming convention `appname.profile`.
+
+## Profile lookup order
+
+When you run `firejail /usr/bin/firefox`, Firejail determines which profile to use in this order:
+
+1. **Explicit `--profile` option** — if you pass `--profile=filename` or `--profile=appname`, that profile is loaded first.
+2. **User directory** — `~/.config/firejail/appname.profile` is checked next.
+3. **System directory** — `/etc/firejail/appname.profile` is checked if no user profile is found.
+4. **Default profile** — if no application-specific profile exists, `default.profile` is loaded (for regular users) or `server.profile` (for root).
+
+Use `--noprofile` to start a sandbox with no profile at all.
+
+## Using the `--profile` option
+
+<Tabs>
+  <Tab title="By file path">
+    ```bash
+    firejail --profile=/home/alice/myprofiles/icecat.profile /usr/bin/icecat
+    ```
+  </Tab>
+  <Tab title="By application name">
+    ```bash
+    # Searches ~/.config/firejail/, then /etc/firejail/
+    firejail --profile=firefox /usr/bin/firefox
+    ```
+  </Tab>
+  <Tab title="With AppImage">
+    ```bash
+    firejail --appimage --profile=firefox firefox-nightly.AppImage
+    ```
+  </Tab>
+</Tabs>
+
+## Key profile directives
+
+### Filesystem access
+
+```
+# Block a file or directory completely
+blacklist ~/.ssh
+blacklist /usr/bin/gcc*
+
+# Allow only specific files (mounts a tmpfs on the parent directory)
+whitelist ~/.mozilla
+whitelist ~/.cache/mozilla/firefox
+
+# Mount a private, empty home directory
+private
+
+# Copy specific home files into a temporary home
+private-home .mozilla,.config/myapp
+
+# Build a minimal /etc with only these files
+private-etc passwd,resolv.conf,ssl,ca-certificates
+
+# Build a minimal /bin with only these programs
+private-bin bash,firefox
+
+# Private /tmp (X11 and PulseAudio sockets are still whitelisted)
+private-tmp
+
+# Make a file or directory read-only
+read-only ~/.config/app/config.json
+
+# Prevent execution from a directory
+noexec /tmp
+```
+
+### Network
+
+```
+# Disable all network access
+net none
+
+# Apply the default iptables firewall
+netfilter
+
+# Apply a custom iptables firewall
+netfilter /etc/firejail/nolocal.net
+```
+
+### Linux capabilities
+
+```
+# Drop all capabilities (recommended for GUI apps)
+caps.drop all
+
+# Drop only specific capabilities
+caps.drop net_broadcast,net_admin,net_raw
+```
+
+### Seccomp
+
+```
+# Enable the default syscall blacklist
+seccomp
+
+# Add extra syscalls to the blacklist
+seccomp mount,umount2
+
+# Block all non-native architectures on 64-bit systems
+seccomp.block-secondary
+```
+
+### DBus
+
+```
+# Block all session DBus access
+dbus-user none
+
+# Block all system DBus access
+dbus-system none
+
+# Allow filtered session DBus with specific permissions
+dbus-user filter
+dbus-user.own org.mozilla.firefox.*
+dbus-user.talk org.freedesktop.Notifications
+```
+
+## Writing a custom profile
+
+Start from the official template located at
+`/usr/share/doc/firejail/profile.template`. The template documents every
+section and lists all common directives with explanations.
+
+A minimal profile for a hypothetical application looks like:
+
+```
+# Firejail profile for myapp
+# Persistent local customizations
+include myapp.local
+# Persistent global definitions
+include globals.local
+
+noblacklist ${HOME}/.config/myapp
+
+include disable-common.inc
+include disable-devel.inc
+include disable-exec.inc
+include disable-interpreters.inc
+include disable-programs.inc
+
+mkdir ${HOME}/.config/myapp
+whitelist ${HOME}/.config/myapp
+include whitelist-common.inc
+
+caps.drop all
+net none
+nodvd
+noinput
+noprinters
+notv
+nou2f
+novideo
+private-bin myapp
+private-dev
+private-etc alternatives,fonts,ld.so.cache,ld.so.conf,ld.so.conf.d,locale,localtime
+private-tmp
+seccomp
+```
+
+Save the file as `~/.config/firejail/myapp.profile`. Firejail will pick it up
+automatically the next time you run `firejail myapp` or `myapp` (if desktop
+integration is configured).
+
+## Using the profile builder
+
+The `--build` option runs the application in a relaxed sandbox and observes
+which files it accesses. It then generates a whitelist-based profile:
+
+```bash
+# Print generated profile to stdout
+firejail --build /usr/bin/vlc ~/Videos/test.mp4
+
+# Save generated profile to a file
+firejail --build=vlc.profile /usr/bin/vlc ~/Videos/test.mp4
+```
+
+<Warning>
+  Profiles generated by `--build` are intended as a starting point for
+  development. Exercise as many application features as possible during the
+  build run, then review and tighten the generated profile before using it in
+  production.
+</Warning>
+
+## Profile includes and `.local` override files
+
+### Include files
+
+Profiles can include shared rule files using the `include` directive:
+
+```
+include disable-common.inc
+include whitelist-common.inc
+include ${CFG}/firefox.profile
+```
+
+`${CFG}` expands to the Firejail system configuration directory (usually
+`/etc/firejail`). `${HOME}` expands to the current user's home directory.
+
+### `.local` override files
+
+For every system profile in `/etc/firejail/`, you can create a corresponding
+`.local` file to add persistent customisations without modifying the
+system-managed profile:
+
+```
+~/.config/firejail/firefox.local
+```
+
+The `.local` file is included at the beginning of the profile, so its
+directives take effect before the main profile runs. This is the recommended
+way to adjust a profile without losing changes on package updates.
+
+<Tip>
+  Use `ignore` in a `.local` file to disable a directive from the system
+  profile:
+
+  ```
+  # ~/.config/firejail/firefox.local
+  ignore dbus-user none
+  ignore private-tmp
+  ```
+</Tip>
+
+## Checking which profile is active
+
+```bash
+$ firejail --profile.print=firefox
+/etc/firejail/firefox.profile
+```

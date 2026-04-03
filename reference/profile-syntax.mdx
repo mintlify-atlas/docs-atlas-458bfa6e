@@ -1,0 +1,531 @@
+---
+title: "Profile syntax"
+description: "Reference for Firejail profile files: file format, lookup order, directives, conditionals, and local overrides."
+---
+
+Firejail profile files contain one directive per line. Most command-line options have a profile equivalent. Profile files use a plain-text format with `#` comments, conditional blocks, and include directives.
+
+---
+
+## File locations
+
+Profile files are stored in two locations:
+
+| Location | Purpose |
+|---|---|
+| `~/.config/firejail/` | Per-user profiles (takes precedence) |
+| `/etc/firejail/` | System-wide profiles |
+
+---
+
+## Profile lookup order
+
+When you run `firejail appname`, Firejail searches for a profile in this order:
+
+1. **Explicit profile** — if `--profile=filename` or `--profile=name` is given, that file (or name) is loaded. When a name is given, `~/.config/firejail/` is searched before `/etc/firejail/`.
+
+2. **Auto-detected profile** — if a file named `appname.profile` exists in `~/.config/firejail/` or `/etc/firejail/`, it is loaded automatically. The user directory takes precedence.
+
+3. **Default profile** — if no application-specific profile is found, `default.profile` is loaded for regular users and `server.profile` for root. Both are searched in `~/.config/firejail/` then `/etc/firejail/`.
+
+Pass `--noprofile` to skip all profile loading.
+
+```bash
+# Use an explicit profile path
+firejail --profile=/home/user/icecat.profile /usr/bin/icecat
+
+# Use a profile by name (searched in ~/.config/firejail then /etc/firejail)
+firejail --profile=icecat /usr/bin/icecat-wrapper.sh
+
+# Disable profile loading entirely
+firejail --noprofile /usr/bin/bash
+```
+
+---
+
+## Scripting
+
+### Comments
+
+Lines beginning with `#` are comments. Inline comments (after a directive) are also supported.
+
+```
+# This is a full-line comment
+net none # this is an inline comment
+```
+
+### Conditionals
+
+Conditionals apply a directive only when a specific option is active.
+
+```
+?CONDITIONAL: profile-directive
+```
+
+Supported conditionals:
+
+| Conditional | True when |
+|---|---|
+| `HAS_APPIMAGE` | `--appimage` was passed |
+| `HAS_NET` | a `--net` option is active |
+| `HAS_NODBUS` | D-Bus is disabled |
+| `HAS_NOSOUND` | sound is disabled |
+| `HAS_PRIVATE` | `--private` is active |
+| `HAS_X11` | an X11 sandbox is active |
+| `ALLOW_TRAY` | `allow-tray` is enabled in `firejail.config` |
+| `BROWSER_ALLOW_DRM` | `browser-allow-drm` is enabled in `firejail.config` |
+| `BROWSER_DISABLE_U2F` | `browser-disable-u2f` is enabled in `firejail.config` |
+
+```
+?HAS_APPIMAGE: whitelist ${HOME}/special/appimage/dir
+?HAS_NET: netfilter
+```
+
+<Note>
+  Conditionals cannot wrap `quiet` or `include` directives. When using `--profile` with conditionals, pass the relevant option (e.g. `--appimage`) before `--profile` on the command line.
+</Note>
+
+### Macros
+
+The following macros expand to common paths:
+
+| Macro | Expands to |
+|---|---|
+| `${HOME}` | Current user's home directory |
+| `${PATH}` | Contents of the `PATH` environment variable |
+| `${CFG}` | Firejail config directory (usually `/etc/firejail`) |
+| `${RUNUSER}` | `/run/user/$UID` |
+| `${DESKTOP}` | XDG desktop directory |
+| `${DOCUMENTS}` | XDG documents directory |
+| `${DOWNLOADS}` | XDG downloads directory |
+| `${MUSIC}` | XDG music directory |
+| `${PICTURES}` | XDG pictures directory |
+| `${VIDEOS}` | XDG videos directory |
+
+### Special directives
+
+| Directive | Description |
+|---|---|
+| `quiet` | Suppress all Firejail output. Must be the first uncommented line. |
+| `ignore command` | Ignore a subsequent directive. Useful in `.local` overrides. |
+| `noblacklist path` | Exempt a path from all following `blacklist` commands. |
+| `nowhitelist path` | Exempt a path from all following `whitelist` commands. |
+| `warn message` | Print a warning message to stderr (no macro expansion). |
+
+```
+quiet
+ignore seccomp
+noblacklist ${HOME}/.mozilla
+nowhitelist ~/.config
+warn This profile is deprecated; use foo instead.
+```
+
+---
+
+## Filesystem directives
+
+### blacklist
+
+Make a file or directory completely inaccessible. The path remains visible in the filesystem but cannot be opened. Glob patterns and `${PATH}` / `${HOME}` macros are supported.
+
+```
+blacklist /usr/bin/gcc*
+blacklist ${PATH}/ifconfig
+blacklist ${HOME}/.ssh
+```
+
+If the blacklisted path is a symlink, the target is also blacklisted.
+
+Use `blacklist-nolog` to suppress syslog messages for a specific path when `tracelog` is active:
+
+```
+blacklist-nolog /usr/bin
+```
+
+### whitelist
+
+Mount a tmpfs over the top-level directory and expose only the listed paths. All other contents of the same top-level directory are hidden.
+
+```
+mkdir ~/.mozilla
+whitelist ~/.mozilla
+mkdir ~/.cache/mozilla/firefox
+whitelist ~/.cache/mozilla/firefox
+```
+
+Changes to whitelisted files are persistent. Use `whitelist-ro` for read-only whitelisting:
+
+```
+whitelist-ro ${HOME}/.config/fontconfig
+```
+
+<Note>
+  `/proc` and `/sys` cannot be used as whitelist top-level directories. `/sys/module` is an exception.
+</Note>
+
+### read-only / read-write
+
+Remount a file or directory as read-only or read-write.
+
+```
+read-only ${HOME}/.bashrc
+read-write ${HOME}/Documents
+```
+
+### noexec
+
+Remount a file or directory with `noexec`, `nodev`, and `nosuid` flags.
+
+```
+noexec /tmp
+noexec ${HOME}
+```
+
+### tmpfs
+
+Mount an empty tmpfs over a directory. The directory must be inside the user's home or owned by the user (root sandboxes are exempt).
+
+```
+tmpfs ${HOME}/scratch
+```
+
+### bind
+
+Mount-bind one path on top of another. Only available when running as root.
+
+```
+bind /data/mydir,/home/user/mydir
+bind /data/myfile,/home/user/myfile
+```
+
+### mkdir / mkfile
+
+Create a directory or empty file before the sandbox starts. Useful for whitelisted paths that the application would otherwise recreate—and lose—on sandbox exit.
+
+```
+mkdir ~/.mozilla
+whitelist ~/.mozilla
+mkfile ~/.config/app/lock
+```
+
+### private
+
+Mount a new empty home directory (all changes lost on exit):
+
+```
+private
+```
+
+Or use an existing directory as the home:
+
+```
+private /path/to/dir
+```
+
+### private-home
+
+Build a temporary home containing only the listed files and directories (relative to `$HOME`):
+
+```
+private-home .config/myapp,.local/share/myapp
+```
+
+### private-etc
+
+Build a minimal `/etc` containing only the listed entries (relative to `/etc`):
+
+```
+private-etc resolv.conf,hosts,passwd,localtime,fonts
+```
+
+### private-bin
+
+Build a minimal `/bin` (also bind-mounted over `/sbin`, `/usr/bin`, `/usr/sbin`) containing only the listed executables:
+
+```
+private-bin bash,cat,ls,python3
+```
+
+### private-tmp
+
+Mount an empty tmpfs over `/tmp`, whitelisting `/tmp/.X11-unix`:
+
+```
+private-tmp
+```
+
+### private-lib
+
+Build a minimal `/lib` with the libraries required by the application:
+
+```
+private-lib
+```
+
+### private-opt / private-srv
+
+Build a minimal `/opt` or `/srv` with the listed entries:
+
+```
+private-opt myapp
+private-srv myservice
+```
+
+### Other filesystem directives
+
+| Directive | Description |
+|---|---|
+| `disable-mnt` | Block access to `/mnt`, `/media`, `/run/mount`, `/run/media` |
+| `private-cache` | Mount empty tmpfs over `~/.cache` |
+| `private-dev` | Create a restricted `/dev` with only essential devices |
+| `private-cwd` | Set working directory inside the jail to the home directory |
+| `private-cwd directory` | Set working directory to an explicit path |
+| `writable-etc` | Mount `/etc` read-write |
+| `writable-var` | Mount `/var` read-write |
+| `writable-var-log` | Use the real `/var/log` instead of a skeleton clone |
+| `writable-run-user` | Disable the default blacklisting of `/run/user/$UID/systemd` and `/run/user/$UID/gnupg` |
+| `keep-dev-shm` | Preserve `/dev/shm` even when `private-dev` is set |
+| `keep-dev-tpm` | Allow access to TPM devices even with `private-dev` |
+| `keep-dev-ntsync` | Allow access to `/dev/ntsync` (useful for Wine) |
+| `keep-var-tmp` | Preserve `/var/tmp` as-is |
+| `keep-shell-rc` | Do not copy shell rc files from `/etc/skel` |
+| `tracelog` | Log blacklist violations to syslog |
+
+---
+
+## Network directives
+
+### net
+
+Create a new network namespace and connect it to an interface:
+
+```
+# Isolated namespace with no connectivity
+net none
+
+# Bridge interface
+net br0
+ip dhcp
+
+# Ethernet / wireless (macvlan/ipvlan)
+net eth0
+ip 192.168.1.100
+```
+
+### netfilter
+
+Apply a firewall inside a new network namespace:
+
+```
+# Use the built-in default filter
+netfilter
+
+# Use a custom filter file
+netfilter /etc/firejail/myapp.net
+```
+
+### dns
+
+Set up to three DNS servers for the sandbox:
+
+```
+dns 1.1.1.1
+dns 9.9.9.9
+```
+
+### Other network directives
+
+| Directive | Description |
+|---|---|
+| `defaultgw address` | Set a default gateway in the new namespace |
+| `hostname name` | Set a hostname for the sandbox |
+| `hostname-randomize` | Assign a random hostname |
+| `ip address` | Assign an IP address to the last `net` interface |
+| `ip dhcp` | Acquire an address via DHCP (requires `dhclient`) |
+| `ip6 address` | Assign an IPv6 address |
+| `iprange addr,addr` | Assign an IP from a range |
+| `mac address` | Assign a MAC address |
+| `mtu number` | Set the MTU |
+| `netlock` | Generate and apply a custom filter automatically |
+| `netns namespace` | Run inside a named persistent network namespace |
+| `protocol unix,inet,inet6` | Restrict allowed socket protocol families |
+
+---
+
+## Security directives
+
+### seccomp
+
+Enable the seccomp syscall filter with the default blocked list:
+
+```
+seccomp
+```
+
+Block additional syscalls on top of the default list:
+
+```
+seccomp kcmp,mincore
+```
+
+Other seccomp variants:
+
+| Directive | Description |
+|---|---|
+| `seccomp.drop syscall,...` | Block only the listed syscalls |
+| `seccomp.keep syscall,...` | Allow only the listed syscalls |
+| `seccomp.32` | Apply 32-bit syscall filter on a 64-bit system |
+| `seccomp.block-secondary` | Restrict to the native syscall architecture |
+| `seccomp-error-action kill\|log\|ERRNO` | Override the action for blocked syscalls |
+
+### caps / caps.drop / caps.keep
+
+```
+# Enable default capabilities filter
+caps
+
+# Drop all capabilities
+caps.drop all
+
+# Drop specific capabilities
+caps.drop net_admin,sys_ptrace
+
+# Keep only specific capabilities
+caps.keep net_bind_service
+```
+
+### noroot
+
+Enable a user namespace that has no root account (uid 0). Effective isolation from privileged operations:
+
+```
+noroot
+```
+
+### nonewprivs
+
+Set the `NO_NEW_PRIVS` flag so child processes cannot gain privileges via SUID or file capabilities:
+
+```
+nonewprivs
+```
+
+### memory-deny-write-execute
+
+Block the creation of memory mappings that are both writable and executable:
+
+```
+memory-deny-write-execute
+```
+
+### restrict-namespaces
+
+Block the creation of new namespaces via seccomp. Optionally restrict to specific namespace types:
+
+```
+# Block all namespace types
+restrict-namespaces
+
+# Block specific types only
+restrict-namespaces cgroup,ipc,net,mnt,pid,time,user,uts
+```
+
+### Other security directives
+
+| Directive | Description |
+|---|---|
+| `apparmor` | Enable AppArmor with the `firejail-default` profile |
+| `apparmor profile_name` | Enable AppArmor with a custom profile |
+| `allow-debuggers` | Whitelist `ptrace` and `process_vm_readv` for debugger use |
+| `allow-bwrap` | Allow bubblewrap inside the Firejail sandbox |
+| `nogroups` | Drop supplementary user groups |
+| `noinput` | Disable input devices |
+| `nosound` | Disable the sound system |
+| `no3d` | Disable 3D hardware acceleration |
+| `nodvd` | Disable DVD and audio CD devices |
+| `notv` | Disable DVB TV devices |
+| `nou2f` | Disable U2F security keys |
+| `novideo` | Disable video capture devices |
+| `noprinters` | Disable printer access |
+| `machine-id` | Spoof `/etc/machine-id` with a random value |
+| `ipc-namespace` | Enable an IPC namespace |
+
+---
+
+## Include files
+
+The `include` directive loads another profile or `.inc` file. The full filename (including extension) must be specified.
+
+```
+include disable-common.inc
+include whitelist-common.inc
+include firefox.profile
+```
+
+Search order for bare filenames (without leading path):
+
+1. `~/.config/firejail/`
+2. `/etc/firejail/`
+
+Macros are supported:
+
+```
+include ${HOME}/myprofiles/extra.profile
+include ${CFG}/firefox.profile
+```
+
+---
+
+## .local override files
+
+For every profile in `/etc/firejail/`, you can create a corresponding `.local` file to add persistent customizations without modifying the system file (which is overwritten on update).
+
+```
+/etc/firejail/firefox.profile        # system profile — do not edit
+~/.config/firejail/firefox.local     # your overrides
+```
+
+Every profile begins by including its own `.local` file:
+
+```
+include firefox.local
+include globals.local
+```
+
+`globals.local` provides system-wide customizations applied to every sandbox that includes it.
+
+To disable a directive from a profile, use `ignore` in the `.local` file:
+
+```bash
+# ~/.config/firejail/firefox.local
+ignore dbus-user.talk org.freedesktop.Notifications
+ignore noroot
+```
+
+---
+
+## Profile aliases and redirects
+
+When several applications share the same profile, create a redirect profile for each alias using the template at `/usr/share/doc/firejail/redirect_alias-profile.template`:
+
+```
+# /etc/firejail/soffice.profile
+# Redirect to the LibreOffice main profile
+include libreoffice.profile
+```
+
+---
+
+## Resource limits
+
+| Directive | Description |
+|---|---|
+| `rlimit-as bytes` | Maximum virtual memory size |
+| `rlimit-cpu seconds` | Maximum CPU time |
+| `rlimit-fsize bytes` | Maximum file size |
+| `rlimit-nofile n` | Maximum open file descriptors |
+| `rlimit-nproc n` | Maximum number of processes |
+| `rlimit-sigpending n` | Maximum pending signals |
+| `cpu 0,1,2` | Restrict to specific CPU cores |
+| `nice value` | Set process niceness |
+| `timeout hh:mm:ss` | Kill the sandbox after elapsed time |

@@ -1,0 +1,201 @@
+---
+title: "X11 sandboxing"
+description: "Isolate graphical applications from the X11 display server to prevent keylogging, screenshot capture, and inter-application snooping."
+---
+
+The X Window System provides no isolation between clients by default. Any
+application connected to the same X server can:
+
+- Read keystrokes typed into other windows.
+- Capture screenshots of other applications' windows.
+- Inject synthetic input events into other applications.
+
+Firejail addresses this by placing sandboxed applications on a separate X
+server so they are isolated from the host desktop.
+
+<Warning>
+  X11 sandboxing with Xephyr, Xpra, or Xvfb requires a new network namespace
+  (such as `--net=eth0` or `--net=none`) to disable the X11 abstract Unix
+  socket. Without a network namespace, the sandboxed application can still
+  reach the host X server through the abstract socket and the isolation is
+  incomplete.
+</Warning>
+
+## Modes
+
+### `--x11=xephyr` — nested X server window
+
+Xephyr is a nested X server that runs as a window on the host desktop. The
+sandboxed application runs inside that window, completely isolated from the
+host X session.
+
+```bash
+firejail --net=eth0 --x11=xephyr /usr/bin/firefox
+```
+
+The default window size is 800×600. Override it with `--xephyr-screen`:
+
+```bash
+firejail --net=eth0 --x11=xephyr --xephyr-screen=1280x720 /usr/bin/firefox
+```
+
+Pass extra parameters to the Xephyr server with `--xephyr-extra-params`:
+
+```bash
+firejail --net=eth0 --x11=xephyr \
+  --xephyr-extra-params="-title My Sandbox" /usr/bin/firefox
+```
+
+In a profile:
+
+```
+xephyr-screen 1280x720
+x11 xephyr
+```
+
+Install Xephyr on Debian/Ubuntu:
+
+```bash
+sudo apt-get install xserver-xephyr
+```
+
+<Note>
+  The `--x11=xephyr` mode is not available when running Firejail as root. The
+  recommended approach is to run a window manager (such as OpenBox) inside the
+  Xephyr window — Firejail ships a security profile for OpenBox.
+</Note>
+
+### `--x11=xpra` — rootless remote display
+
+Xpra renders the sandboxed application's windows as floating windows on the
+host desktop, without a containing border window. This gives a more native
+look while still providing full isolation.
+
+```bash
+firejail --net=eth0 --x11=xpra /usr/bin/firefox
+```
+
+In a profile:
+
+```
+x11 xpra
+```
+
+Install Xpra on Debian/Ubuntu:
+
+```bash
+sudo apt-get install xpra
+```
+
+<Note>
+  `--x11=xpra` is not available when running Firejail as root.
+</Note>
+
+### `--x11=xvfb` — headless virtual display
+
+Xvfb (X virtual framebuffer) performs all rendering in memory without
+displaying anything on screen. It is mainly used for automated testing or for
+running GUI applications on headless servers, often combined with VNC for
+remote access.
+
+```bash
+firejail --net=none --x11=xvfb /usr/bin/openbox
+```
+
+Example: start a headless desktop and attach a VNC server to it:
+
+```bash
+# Start the sandbox with a headless display
+firejail --net=none --x11=xvfb /usr/bin/openbox
+
+# Attach a VNC server to the display Firejail printed (e.g. :792)
+x11vnc -display :792
+```
+
+The default Xvfb screen size is 800×600. This can be changed in
+`/etc/firejail/firejail.config` with the `xvfb-screen` setting.
+
+Install Xvfb on Debian/Ubuntu:
+
+```bash
+sudo apt-get install xvfb
+```
+
+<Note>
+  `--x11=xvfb` is not available when running Firejail as root.
+</Note>
+
+### `--x11=none` — block all X11 access
+
+Blacklist `/tmp/.X11-unix`, `~/.Xauthority`, and the file pointed to by
+`$XAUTHORITY`. Remove the `DISPLAY` and `XAUTHORITY` environment variables.
+Firejail will exit with an error if the X11 abstract socket remains accessible
+in the sandbox.
+
+Use this for applications that do not need a display at all:
+
+```bash
+firejail --net=none --x11=none /usr/bin/wget https://example.com/file
+```
+
+In a profile:
+
+```
+# Prefer x11 none when net none is also set
+x11 none
+```
+
+## Automatic mode selection
+
+Running `firejail --x11` (without `=backend`) makes Firejail choose a backend
+automatically. It tries Xephyr first; if not installed, it falls back to Xpra.
+Xvfb and the X11 security extension are not tried in automatic mode.
+
+```bash
+firejail --x11 --net=eth0 /usr/bin/firefox
+```
+
+## Configuration
+
+The default screen resolution and other Xephyr/Xvfb settings are read from
+`/etc/firejail/firejail.config`. Relevant settings:
+
+| Setting | Description |
+|---------|-------------|
+| `xephyr-screen` | Default resolution for `--x11=xephyr` (e.g. `800x600`) |
+| `xvfb-screen` | Default resolution for `--x11=xvfb` |
+| `xephyr-extra-params` | Default extra parameters passed to Xephyr |
+
+Per-sandbox overrides (`--xephyr-screen`, `--xephyr-extra-params`) take
+precedence over the global configuration.
+
+## Wayland
+
+Firejail's X11 sandboxing options apply only to X11 connections. Applications
+running natively on Wayland do not use the X display socket and are therefore
+unaffected by these options.
+
+To prevent a sandboxed application from accessing the Wayland socket, blacklist
+it in the profile:
+
+```
+# Disable Wayland socket access
+blacklist ${RUNUSER}/wayland-*
+```
+
+To disable both X11 and Wayland access for a CLI-only application:
+
+```
+blacklist ${RUNUSER}/wayland-*
+x11 none
+net none
+```
+
+## Comparing the X11 modes
+
+| Mode | Visible window | Network namespace needed | Use case |
+|------|---------------|--------------------------|----------|
+| `xephyr` | Yes, in a containing window | Yes | Full desktop isolation, window managers |
+| `xpra` | Floating windows on host desktop | Yes | Isolated GUI apps with native look |
+| `xvfb` | No (headless) | Yes | Automated testing, server-side rendering, VNC |
+| `none` | — | Recommended | CLI tools, applications with no display |

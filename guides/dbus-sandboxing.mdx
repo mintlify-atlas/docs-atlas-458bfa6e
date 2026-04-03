@@ -1,0 +1,244 @@
+---
+title: "DBus sandboxing"
+description: "Restrict or block sandboxed applications' access to the session and system DBus buses."
+---
+
+DBus is the interprocess communication system used extensively on Linux
+desktops. Applications use it to talk to system services (via the _system bus_)
+and to other desktop applications (via the _session bus_).
+
+Without DBus sandboxing, a compromised application inside a Firejail sandbox
+can:
+
+- Query and control system services (network manager, power manager, etc.).
+- Send or receive signals from other running applications.
+- Impersonate well-known DBus names.
+
+Firejail supports per-bus policies: you can block bus access entirely, or
+enable a fine-grained filter that allows only the specific names and interfaces
+your application legitimately needs.
+
+<Note>
+  Filtered DBus access (`filter` policy) requires the `xdg-dbus-proxy` utility
+  to be installed on the host system. The `none` policy does not require it.
+</Note>
+
+## Session bus policies
+
+The session bus connects applications within the current user session.
+
+### Blocking all session bus access
+
+```bash
+firejail --dbus-user=none /usr/bin/myapp
+```
+
+In a profile:
+
+```
+dbus-user none
+```
+
+### Filtered session bus access
+
+```bash
+firejail --dbus-user=filter \
+  --dbus-user.own=org.mozilla.firefox.* \
+  --dbus-user.talk=org.freedesktop.Notifications \
+  /usr/bin/firefox
+```
+
+In a profile:
+
+```
+dbus-user filter
+dbus-user.own org.mozilla.firefox.*
+dbus-user.talk org.freedesktop.Notifications
+```
+
+## System bus policies
+
+The system bus connects applications to system-level services.
+
+### Blocking all system bus access
+
+```bash
+firejail --dbus-system=none /usr/bin/myapp
+```
+
+In a profile:
+
+```
+dbus-system none
+```
+
+### Filtered system bus access
+
+```bash
+firejail --dbus-system=filter \
+  --dbus-system.talk=org.freedesktop.NetworkManager \
+  /usr/bin/nm-applet
+```
+
+In a profile:
+
+```
+dbus-system filter
+dbus-system.talk org.freedesktop.NetworkManager
+```
+
+<Warning>
+  Once a bus is set to `none`, it cannot be relaxed to `filter` later in the
+  same profile. If you need filtering, use `filter` from the start.
+</Warning>
+
+## Fine-grained filter options
+
+When using the `filter` policy, Firejail exposes five permission types for each
+bus. These can be applied to both the user (session) and system buses.
+
+<AccordionGroup>
+  <Accordion title=".talk — send and receive messages">
+    Allows the application to send method calls and receive replies from the
+    named well-known bus name. This is the most commonly needed permission.
+
+    ```
+    dbus-user.talk org.freedesktop.Notifications
+    dbus-system.talk org.freedesktop.NetworkManager
+    ```
+
+    The `.*` suffix matches the name and all names beneath it:
+
+    ```
+    # Matches org.mozilla, org.mozilla.firefox, org.mozilla.firefox.anything
+    dbus-user.talk org.mozilla.*
+    ```
+  </Accordion>
+  <Accordion title=".own — register a well-known name">
+    Allows the application to own (claim) the specified well-known name on the
+    bus. Required when the application itself acts as a DBus service.
+
+    ```
+    dbus-user.own org.mozilla.firefox.*
+    dbus-user.own com.mycompany.myapp
+    ```
+  </Accordion>
+  <Accordion title=".see — list name but not talk">
+    Allows the application to see the specified name in the bus name listing
+    (e.g. via `ListNames`) but not to send it any messages.
+
+    ```
+    dbus-user.see org.freedesktop.Notifications
+    ```
+  </Accordion>
+  <Accordion title=".call — call specific methods">
+    Allows the application to call a specific interface member at a specific
+    object path on the named bus name. More granular than `.talk`.
+
+    The format is: `name=InterfaceMember[@/object/path]`
+
+    - `*` as the member matches all members of an interface.
+    - Omitting the interface member matches all members and paths.
+    - The `/*` suffix on a path matches all objects under it.
+
+    ```
+    dbus-user.call org.freedesktop.Notifications=org.freedesktop.Notifications.*@/org/freedesktop/Notifications
+    ```
+  </Accordion>
+  <Accordion title=".broadcast — receive broadcast signals">
+    Allows the application to receive broadcast (signal) messages from the
+    specified interface member at the specified object path.
+
+    ```
+    dbus-user.broadcast org.freedesktop.Notifications=org.freedesktop.Notifications.*@/org/freedesktop/Notifications
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Logging DBus activity
+
+Enable DBus logging to diagnose which names and methods an application
+actually uses. This helps you build a minimal filter policy.
+
+```bash
+# Log session bus activity
+firejail --dbus-user=filter --dbus-user.log /usr/bin/myapp
+
+# Log system bus activity
+firejail --dbus-system=filter --dbus-system.log /usr/bin/myapp
+
+# Write logs to a file
+firejail --dbus-system=filter --dbus-system.log \
+  --dbus-log=dbus.txt /usr/bin/myapp
+```
+
+## Abstract socket isolation
+
+The `filter` and `none` policies only control access to the regular DBus UNIX
+sockets. An application can bypass them by connecting through the _abstract_
+Unix socket namespace.
+
+To block access to abstract sockets as well, use one of:
+
+- `--net` to create a new network namespace (which hides abstract sockets).
+- Remove `unix` from the protocol filter: `--protocol=inet,inet6,netlink`.
+
+## Examples from common profiles
+
+<CodeGroup>
+
+```ini Firefox (firefox.profile)
+dbus-user filter
+dbus-user.own org.mozilla.*
+dbus-user.own org.mpris.MediaPlayer2.firefox.*
+dbus-system none
+```
+
+```ini Media player
+dbus-user filter
+dbus-user.own org.mpris.MediaPlayer2.myplayer
+dbus-user.talk org.freedesktop.Notifications
+dbus-user.talk ca.desrt.dconf
+dbus-system none
+```
+
+```ini System tray applet
+dbus-user filter
+dbus-user.own com.mycompany.applet
+dbus-user.talk org.kde.StatusNotifierWatcher
+dbus-user.talk org.freedesktop.Notifications
+dbus-system filter
+dbus-system.talk org.freedesktop.NetworkManager
+```
+
+```ini Fully locked down (CLI tool)
+dbus-user none
+dbus-system none
+```
+
+</CodeGroup>
+
+<Tip>
+  Flatpak metadata is a useful reference for DBus permissions. If the
+  application is distributed via Flatpak, inspect its metadata:
+
+  ```bash
+  flatpak remote-info --show-metadata flathub com.example.App
+  ```
+
+  Note that Flatpak implicitly grants an application ownership of its own
+  application ID on the session bus. Add that to your profile's
+  `dbus-user.own` directive.
+</Tip>
+
+## Overriding filter rules in `.local` files
+
+Individual filter rules can be disabled in a `.local` override file without
+modifying the system profile:
+
+```
+# ~/.config/firejail/firefox.local
+
+# Disable desktop notifications for this browser instance
+ignore dbus-user.talk org.freedesktop.Notifications
+```

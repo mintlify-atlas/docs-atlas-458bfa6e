@@ -1,0 +1,128 @@
+---
+title: "Security model"
+description: "How Firejail layers Linux namespaces, seccomp-bpf, and capabilities to reduce the attack surface of untrusted applications — and what it does and does not protect against."
+---
+
+Firejail is a SUID sandbox program that reduces the risk of security breaches by restricting the running environment of untrusted applications using Linux namespaces, seccomp-bpf, and Linux capabilities. It allows a process and all its descendants to have their own private view of globally shared kernel resources such as the network stack, process table, and mount table.
+
+## How the layers work together
+
+Firejail applies multiple independent security mechanisms in combination. Each layer constrains a different dimension of what a sandboxed process can do.
+
+<Steps>
+  <Step title="Linux namespaces">
+    Firejail places each sandbox in a new set of namespaces. By default this includes a new mount namespace and new PID and UTS namespaces. IPC, network, and user namespaces can be added with command-line options.
+
+    The default filesystem is based on the host filesystem with `/etc`, `/var`, `/usr`, `/bin`, `/sbin`, `/lib`, `/lib32`, `/libx32`, and `/lib64` mounted read-only. Only `/home` and `/tmp` are writable.
+  </Step>
+  <Step title="seccomp-bpf">
+    A Berkeley Packet Filter program is installed in the kernel to intercept and block system calls. Firejail maintains a default blocklist (`@default-nodebuggers`) and allows the list to be extended or reduced per sandbox. See [seccomp-bpf filtering](/security/seccomp-bpf) for details.
+  </Step>
+  <Step title="Linux capabilities">
+    Capabilities split root privilege into fine-grained units. Firejail can drop individual capabilities or all capabilities from a sandbox. `--caps.drop=all` is the recommended starting point for GUI applications and programs from unofficial sources. See [Linux capabilities](/security/linux-capabilities) for details.
+  </Step>
+</Steps>
+
+These layers stack: a process that escapes the namespace view still hits the seccomp filter; one that somehow bypasses seccomp still lacks the capabilities needed to do host-level damage.
+
+Firejail can also operate inside a SELinux or AppArmor environment and integrates with Linux Control Groups.
+
+## The SUID trade-off
+
+<Warning>
+Firejail is currently implemented as a SUID binary. If a malicious or compromised user account exploits a bug in Firejail itself, that could lead to privilege escalation to root. Only allow trusted users to run Firejail.
+</Warning>
+
+The SUID bit is required because setting up namespaces and installing capability filters on behalf of another process requires elevated privileges that a normal user process does not have. This is a deliberate design trade-off: Firejail gains the ability to create strong sandboxes at the cost of running with elevated privileges during setup.
+
+Because the SUID executable is itself part of the attack surface, the project provides a responsible disclosure path for security bugs (see [Reporting vulnerabilities](#reporting-vulnerabilities) below).
+
+## What Firejail protects against
+
+- **Filesystem access**: Sandboxed processes see a restricted view of the filesystem. System directories are mounted read-only. Profiles layer private home directories, private `/tmp`, whitelists, and blacklists on top.
+- **Network access**: A separate network namespace can be assigned per sandbox. Networking can be restricted or disabled entirely with `--net=none`.
+- **Syscall abuse**: seccomp-bpf blocks dangerous system calls (such as `ptrace`, `mount`, and kernel module loading) before they reach the kernel, neutralising large categories of exploit technique.
+- **Capability abuse**: Dropping all capabilities prevents sandboxed root processes from performing privileged operations on the host such as loading modules, changing network configuration, or mounting filesystems.
+- **Inter-process interference**: PID namespace isolation prevents sandboxed processes from seeing or signalling host processes.
+
+## What Firejail does not protect against
+
+- **Kernel vulnerabilities**: All sandbox layers rely on the Linux kernel. A kernel exploit can bypass namespace, seccomp, and capability restrictions completely.
+- **Poor profiles**: A profile that whitelists too much, or that omits `--seccomp` and `--caps.drop=all`, provides minimal protection. Review profiles carefully for sensitive use cases.
+- **X11 snooping by default**: Sandboxed X11 applications can interact with other windows on the same display unless `--x11` isolation is explicitly configured.
+- **User-namespace escapes**: If `--noroot` is not enabled, a process running as root inside the sandbox shares the host user namespace.
+- **Side-channel attacks**: CPU-level side channels (Spectre, Meltdown variants) are not mitigated by Firejail.
+- **Snap and Flatpak packages**: These have their own sandboxing and are not compatible with Firejail. Do not use Firejail to sandbox Snap or Flatpak applications.
+
+## Best practices
+
+<Tip>
+Apply the strictest combination of options your application can tolerate. Using several options together is significantly more effective than any single option alone.
+</Tip>
+
+| Option | Effect |
+|--------|--------|
+| `--caps.drop=all` | Drop all Linux capabilities — strongly recommended for GUI apps and untrusted programs |
+| `--seccomp` | Enable the default seccomp-bpf syscall blocklist |
+| `--private` | Mount a temporary home directory; all changes are discarded on exit |
+| `--net=none` | Disable all network access |
+| `--noroot` | Suppress root in a user namespace (requires kernel 3.8+) |
+
+A game with no network requirement:
+
+```bash
+firejail --caps.drop=all --seccomp --private --net=none /usr/bin/warzone2100
+```
+
+A system service started as root that only needs specific capabilities:
+
+```bash
+sudo firejail --caps.keep=chown,net_bind_service,setgid,setuid --seccomp /etc/init.d/nginx start
+```
+
+## Restricting who can use Firejail
+
+Because Firejail is SUID, limiting which users can execute it reduces the attack surface. Create `/etc/firejail/firejail.users` listing the users who are permitted to run the sandbox:
+
+```text
+dustin
+lucas
+mike
+eleven
+```
+
+Users not listed will have Firejail attempt to run the program without sandboxing. Manage the file with `firecfg`:
+
+```bash
+# Add specific users
+sudo firecfg --add-users dustin lucas mike eleven
+
+# Add the current user (also creates the file if absent)
+sudo firecfg
+```
+
+See [Login restrictions](/security/login-restrictions) for more detail, including an alternative group-based approach.
+
+## Supported versions
+
+Firejail only supports the **latest released version**. Older versions are not patched and may contain unfixed vulnerabilities and outdated profiles.
+
+| Version | Upstream support | Notable distribution |
+|---------|-----------------|----------------------|
+| 0.9.80 | Current release | — |
+| 0.9.72 | End of life | Debian 12, Ubuntu 24.04 LTS |
+| 0.9.66 | End of life | Ubuntu 22.04 LTS |
+| 0.9.64 | End of life | Debian 11 |
+| 0.9.62 | End of life | Ubuntu 20.04 LTS |
+
+<Note>
+Even if a distribution version is still supported by the distribution, it does not mean the Firejail package is well maintained. If your distribution ships an older version, contact the package maintainer to request an update, or build from the current development version.
+</Note>
+
+## Reporting vulnerabilities
+
+If you believe you have found a security vulnerability, report it privately by email to:
+
+**netblue30@protonmail.com**
+
+Do not open a public GitHub issue for security vulnerabilities until a fix has been prepared.

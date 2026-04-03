@@ -1,0 +1,242 @@
+---
+title: "Network sandboxing"
+description: "Isolate sandboxed applications at the network level using namespaces, firewalls, and traffic shaping."
+---
+
+Firejail can place an application in its own network namespace, giving it a
+completely separate network stack — its own interfaces, routing table, and
+firewall rules — that is invisible to the rest of the system.
+
+## Disabling network access
+
+The simplest network restriction is `--net=none`, which creates an empty
+network namespace with only a loopback interface. The application can reach
+`127.0.0.1` but nothing else.
+
+```bash
+firejail --net=none /usr/bin/vlc
+```
+
+In a profile:
+
+```
+net none
+```
+
+<Note>
+  On some platforms `--net=none` can crash the application. If that happens,
+  use `--protocol=unix` instead to block only internet sockets while keeping
+  Unix domain sockets available.
+</Note>
+
+## Creating a new network namespace with a virtual interface
+
+`--net=interface` creates a new network namespace and connects it to the host
+network through the named interface using a macvlan (for Ethernet/Wi-Fi) or
+bridge (for bridge devices) driver.
+
+<Tabs>
+  <Tab title="Ethernet interface">
+    ```bash
+    firejail --net=eth0 /usr/bin/firefox
+    ```
+
+    Firejail assigns an IP address automatically (verified with ARP). You can
+    specify one manually:
+
+    ```bash
+    firejail --net=eth0 --ip=192.168.1.80 /usr/bin/firefox
+    ```
+  </Tab>
+  <Tab title="Wireless interface">
+    ```bash
+    firejail --net=wlan0 /usr/bin/firefox
+    ```
+  </Tab>
+  <Tab title="Bridge interface">
+    First create and configure the bridge:
+
+    ```bash
+    sudo brctl addbr br0
+    sudo ifconfig br0 10.10.20.1/24
+    ```
+
+    Then connect the sandbox to it:
+
+    ```bash
+    firejail --net=br0 /usr/bin/firefox
+    ```
+  </Tab>
+  <Tab title="Multiple interfaces">
+    Up to four `--net` options can be specified. IP addresses are assigned
+    automatically for interfaces that are not explicitly configured:
+
+    ```bash
+    firejail --net=br0 --net=br1 --net=br2
+    ```
+  </Tab>
+</Tabs>
+
+## Applying a firewall with `--netfilter`
+
+`--netfilter` installs an iptables firewall inside the sandbox's network
+namespace. It has no effect on sandboxes that use the system network namespace.
+
+### Default firewall
+
+The default firewall drops all inbound connections and allows all outbound
+traffic except STUN (WebRTC) requests:
+
+```bash
+firejail --net=eth0 --netfilter /usr/bin/firefox
+```
+
+```
+*filter
+:INPUT DROP [0:0]
+:FORWARD DROP [0:0]
+:OUTPUT ACCEPT [0:0]
+-A INPUT -i lo -j ACCEPT
+-A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+-A INPUT -p icmp --icmp-type echo-request -j ACCEPT
+-A OUTPUT -p udp --dport 3478 -j DROP
+-A OUTPUT -p udp --dport 3479 -j DROP
+COMMIT
+```
+
+### Custom firewall file
+
+Write your own rules in iptables-save/iptables-restore format, then pass the
+file path:
+
+```bash
+firejail --net=eth0 --netfilter=/etc/firejail/nolocal.net /usr/bin/firefox
+```
+
+Firejail ships several example firewall files in `/etc/firejail/`:
+
+<AccordionGroup>
+  <Accordion title="webserver.net">
+    Allows only inbound TCP connections on ports 80 and 443. Suitable for web
+    server processes.
+
+    ```bash
+    firejail --net=eth0 --netfilter=/etc/firejail/webserver.net /etc/init.d/apache2 start
+    ```
+  </Accordion>
+  <Accordion title="nolocal.net / nolocal6.net">
+    Blocks access to all local network addresses. Useful for applications that
+    should communicate only with internet hosts.
+
+    ```bash
+    firejail --net=eth0 --netfilter=/etc/firejail/nolocal.net /usr/bin/firefox
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Inspect the active firewall
+
+```bash
+firejail --netfilter.print=browser
+```
+
+## DNS configuration
+
+Set up to three DNS servers for the sandbox. This is useful when you do not
+trust the DNS servers configured on your network:
+
+```bash
+firejail --net=eth0 --dns=8.8.8.8 --dns=8.8.4.4 /usr/bin/firefox
+```
+
+In a profile:
+
+```
+net eth0
+dns 8.8.8.8
+dns 8.8.4.4
+```
+
+<Note>
+  DNS configuration via `--dns` is not supported on systemd-resolved setups.
+</Note>
+
+Print the DNS configuration of a running sandbox:
+
+```bash
+firejail --dns.print=mybrowser
+```
+
+## Traffic shaping with `--bandwidth`
+
+Firejail implements a rate-limiting shaper based on the Linux `tc` command.
+Traffic shaping works only on sandboxes that have a new network namespace (created with `--net`).
+
+```bash
+# Start a named sandbox
+firejail --name=mybrowser --net=eth0 /usr/bin/firefox &
+
+# Limit download to 80 KB/s, upload to 20 KB/s
+firejail --bandwidth=mybrowser set eth0 80 20
+
+# Check current limits
+firejail --bandwidth=mybrowser status
+
+# Remove limits
+firejail --bandwidth=mybrowser clear eth0
+```
+
+You can also address a sandbox by PID instead of name:
+
+```bash
+firejail --bandwidth=1234 set eth0 500 100
+```
+
+## Setting a sandbox hostname
+
+The `--hostname` option sets the UTS hostname visible inside the sandbox:
+
+```bash
+firejail --hostname=sandboxhost /usr/bin/firefox
+```
+
+In a profile:
+
+```
+hostname sandboxhost
+```
+
+<Warning>
+  Changing the hostname may cause networking issues and can prevent X11
+  applications from authenticating to the X server. Test thoroughly before
+  using this in a profile.
+</Warning>
+
+## Monitoring network activity
+
+<CardGroup cols={2}>
+  <Card title="Network statistics" icon="chart-bar">
+    ```bash
+    firejail --netstats
+    ```
+    Shows real-time RX/TX speeds for all sandboxed network namespaces.
+  </Card>
+  <Card title="DNS trace" icon="magnifying-glass">
+    ```bash
+    sudo firejail --dnstrace
+    ```
+    Monitors DNS queries sent from all sandboxes (root only).
+  </Card>
+  <Card title="Traffic trace" icon="network-wired">
+    ```bash
+    sudo firejail --nettrace
+    ```
+    Shows active TCP/UDP/ICMP connections (root only).
+  </Card>
+  <Card title="Interface info" icon="info">
+    ```bash
+    firejail --net.print=mybrowser
+    ```
+    Prints the network interface configuration for a running sandbox.
+  </Card>
+</CardGroup>

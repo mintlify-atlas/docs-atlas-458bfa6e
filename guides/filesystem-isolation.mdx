@@ -1,0 +1,255 @@
+---
+title: "Filesystem isolation"
+description: "Control what files and directories a sandboxed application can see, read, and write."
+---
+
+Firejail builds a private filesystem view for each sandboxed process using
+Linux mount namespaces. The sandbox sees the host filesystem with varying
+levels of restriction depending on which directives are active.
+
+## Default filesystem layout
+
+Without any profile directives, Firejail mounts the following system
+directories **read-only** inside the sandbox:
+
+- `/etc`, `/var`, `/usr`, `/bin`, `/sbin`
+- `/lib`, `/lib32`, `/libx32`, `/lib64`
+
+The following directories are **writable**:
+
+- `/home` (current user's home directory only)
+- `/tmp`
+
+<Note>
+  `/etc` and `/var` are remounted `noexec` by default when the sandbox is
+  started as a regular user.
+</Note>
+
+## Private home directory (`--private`)
+
+Replace the user's home directory with a temporary, empty filesystem for the
+duration of the sandbox. All changes are discarded when the sandbox exits.
+
+<Tabs>
+  <Tab title="Empty temporary home">
+    ```bash
+    firejail --private /usr/bin/firefox
+    ```
+
+    In a profile:
+
+    ```
+    private
+    ```
+  </Tab>
+  <Tab title="Custom directory as home">
+    Use an existing directory as the home directory instead:
+
+    ```bash
+    firejail --private=/home/alice/firefox-home /usr/bin/firefox
+    ```
+
+    In a profile:
+
+    ```
+    private /home/alice/firefox-home
+    ```
+  </Tab>
+</Tabs>
+
+## Selective home contents (`--private-home`)
+
+Build a new home in a temporary filesystem and copy only the listed files and
+directories into it. Paths must be relative to the user's home directory. All
+modifications are discarded on exit.
+
+```bash
+firejail --private-home=.mozilla /usr/bin/firefox
+```
+
+In a profile:
+
+```
+private-home .mozilla,.config/myapp
+```
+
+## Selective /etc contents (`--private-etc`)
+
+Build a new `/etc` in a temporary filesystem with only the listed files. All
+modifications are discarded on exit.
+
+```bash
+# Minimal /etc for a console tool
+firejail --private-etc /usr/bin/dig debian.org
+
+# Add groups for X11/GUI and TLS
+firejail --private-etc=@x11,@tls-ca /usr/bin/gimp
+```
+
+Predefined groups (use the `@group` syntax) cover common sets of files:
+
+| Group | Contents |
+|-------|----------|
+| `@x11` | fonts, pango, X11, GTK, Qt config files |
+| `@tls-ca` | CA certificates and TLS/SSL configuration |
+| `@games` | Common game-related /etc files |
+
+Multiple `private-etc` directives accumulate. In a profile:
+
+```
+private-etc passwd,resolv.conf,ssl,ca-certificates,fonts,localtime
+```
+
+## Selective /bin contents (`--private-bin`)
+
+Build a new `/bin` in a temporary filesystem with only the listed executables.
+The directory is also bind-mounted over `/sbin`, `/usr/bin`, `/usr/sbin`, and
+`/usr/local/bin`. All modifications are discarded on exit.
+
+```bash
+firejail --private-bin=bash,cat,ls,sed
+```
+
+File globbing is supported:
+
+```bash
+firejail --private-bin=sh,bash,python*
+```
+
+In a profile:
+
+```
+private-bin bash,firefox,python3
+```
+
+## Private /tmp (`--private-tmp`)
+
+Mount an empty filesystem on `/tmp`. X11 sockets (`/tmp/.X11-unix`) and
+PulseAudio sockets are whitelisted automatically so GUI applications continue
+to work.
+
+```bash
+firejail --private-tmp
+```
+
+In a profile:
+
+```
+private-tmp
+```
+
+## Whitelisting files and directories
+
+`--whitelist` mounts a tmpfs on the _top-level_ directory of the whitelisted
+path and bind-mounts the specific file or directory into it. Everything else in
+that top-level directory becomes inaccessible. Changes to whitelisted paths are
+persistent.
+
+```bash
+firejail --noprofile --whitelist=~/.mozilla
+```
+
+A typical profile sequence for an application:
+
+```
+# Ensure the directories exist before the sandbox starts
+mkdir ~/.mozilla
+mkdir ~/.cache/mozilla/firefox
+
+# Whitelist only these paths inside ~/
+whitelist ~/.mozilla
+whitelist ~/.cache/mozilla/firefox
+
+# Include commonly whitelisted system paths
+include whitelist-common.inc
+```
+
+<Note>
+  `/proc`, `/sys` (except `/sys/module`), and a few other paths cannot be used
+  as whitelist top-level directories.
+</Note>
+
+## Blacklisting files and directories
+
+`--blacklist` makes a file or directory completely inaccessible inside the
+sandbox. The path is still visible on the filesystem but cannot be opened.
+
+```bash
+firejail --blacklist=/sbin --blacklist=/usr/sbin
+firejail --blacklist=~/.ssh
+```
+
+In a profile:
+
+```
+blacklist ~/.ssh
+blacklist /usr/bin/gcc*
+blacklist ${PATH}/ifconfig
+```
+
+Blacklisting a symbolic link also blacklists the target it points to.
+
+## Read-only and noexec mounts
+
+### `--read-only`
+
+Make a specific file or directory read-only inside the sandbox:
+
+```bash
+firejail --read-only=~/.mozilla /usr/bin/firefox
+```
+
+In a profile:
+
+```
+read-only ~/.config/app/settings.json
+```
+
+### `--noexec`
+
+Remount a directory with `noexec`, `nodev`, and `nosuid` flags, preventing
+execution of any binaries stored there:
+
+```bash
+firejail --noexec=/tmp
+```
+
+In a profile:
+
+```
+noexec /tmp
+noexec ${HOME}
+```
+
+## Combining directives
+
+These directives compose. A hardened browser profile might combine several of
+them:
+
+```
+# Start with common blacklists
+include disable-common.inc
+include disable-programs.inc
+
+# Allow only browser config directories
+mkdir ~/.mozilla
+mkdir ~/.cache/mozilla/firefox
+whitelist ~/.mozilla
+whitelist ~/.cache/mozilla/firefox
+include whitelist-common.inc
+
+# Minimal /etc, /bin, /dev, /tmp
+private-bin bash,firefox
+private-dev
+private-etc @x11,@tls-ca,hostname,hosts,resolv.conf
+private-tmp
+
+# Drop all capabilities; block dangerous syscalls
+caps.drop all
+seccomp
+```
+
+<Tip>
+  Use `firejail --fs.print=sandboxname` to inspect the filesystem log for a
+  running sandbox and verify that the mount layout is what you expect.
+</Tip>

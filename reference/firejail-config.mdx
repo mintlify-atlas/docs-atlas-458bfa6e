@@ -1,0 +1,564 @@
+---
+title: "firejail.config"
+description: "System-wide configuration file for Firejail. Controls default behavior for all sandboxes on the host."
+---
+
+The system-wide configuration file is located at `/etc/firejail/firejail.config`. It contains keyword-argument pairs, one per line. Most features are enabled by default. Accepted values are `yes` or `no` unless otherwise noted.
+
+<Note>
+  This file is read at sandbox startup. Changes take effect for all new sandboxes without restarting any service.
+</Note>
+
+---
+
+## General
+
+<AccordionGroup>
+  <Accordion title="allow-tray">
+    Allow programs to display a tray icon in the desktop panel.
+
+    <Warning>
+      Enabling tray icons can allow a sandboxed process to escape the sandbox. See [discussion #4053](https://github.com/netblue30/firejail/discussions/4053) for details.
+    </Warning>
+
+    ```ini
+    # allow-tray no
+    ```
+
+    **Default:** `no`
+  </Accordion>
+
+  <Accordion title="arg-max-count">
+    Maximum number of arguments accepted on the command line.
+
+    For example, `firejail --foo /usr/bin/bar baz` has 4 arguments. This limit makes stack-smashing harder.
+
+    ```ini
+    # arg-max-count 128
+    ```
+
+    **Default:** `128`
+  </Accordion>
+
+  <Accordion title="arg-max-len">
+    Maximum length (in characters) of each individual command-line argument.
+
+    For example, `--foo=bar` has a length of 9.
+
+    ```ini
+    # arg-max-len 4096
+    ```
+
+    **Default:** `4096`
+  </Accordion>
+
+  <Accordion title="quiet-by-default">
+    Suppress Firejail's output every time a sandbox is started, as if `--quiet` were always passed.
+
+    ```ini
+    # quiet-by-default no
+    ```
+
+    **Default:** `no`
+  </Accordion>
+
+  <Accordion title="firejail-prompt">
+    Show a green Firejail prompt in the terminal when running inside a sandbox.
+
+    ```ini
+    # firejail-prompt no
+    ```
+
+    **Default:** `no`
+  </Accordion>
+
+  <Accordion title="name-change">
+    Allow sandbox name changes.
+
+    ```ini
+    # name-change yes
+    ```
+
+    **Default:** `yes`
+  </Accordion>
+
+  <Accordion title="join">
+    Allow regular users to join an existing sandbox. Root can always join regardless of this setting.
+
+    ```ini
+    # join yes
+    ```
+
+    **Default:** `yes`
+  </Accordion>
+
+  <Accordion title="join-timeout">
+    Number of seconds to wait for a sandbox to finish starting before a join attempt fails.
+
+    ```ini
+    # join-timeout 5
+    ```
+
+    **Default:** `5`
+  </Accordion>
+
+  <Accordion title="env-max-count">
+    Maximum number of environment variables passed to the sandbox.
+
+    ```ini
+    # env-max-count 256
+    ```
+
+    **Default:** `256`
+  </Accordion>
+
+  <Accordion title="env-max-len">
+    Maximum length (in characters) of each environment variable value.
+
+    ```ini
+    # env-max-len 4096
+    ```
+
+    **Default:** `4096` (based on `PATH_MAX`)
+  </Accordion>
+
+  <Accordion title="file-copy-limit">
+    Maximum file copy size in megabytes for `--private-*` options. Files are copied into RAM.
+
+    ```ini
+    # file-copy-limit 500
+    ```
+
+    **Default:** `500`
+  </Accordion>
+
+  <Accordion title="disable-mnt">
+    Permanently disable access to `/mnt`, `/media`, `/run/mount`, and `/run/media`. Unlike the profile `disable-mnt` directive, this cannot be overridden with `--noblacklist` or `--ignore`.
+
+    ```ini
+    # disable-mnt no
+    ```
+
+    **Default:** `no`
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Network
+
+<AccordionGroup>
+  <Accordion title="arp-probes">
+    Number of ARP probes sent when assigning an IP address for the `--net` option. Each probe has a 0.5-second timeout. This is a partial implementation of RFC 5227.
+
+    <Tip>
+      Increase to `4` if your local layer-2 network uses RSTP (IEEE 802.1w).
+    </Tip>
+
+    Permitted values: `1` to `30`.
+
+    ```ini
+    # arp-probes 2
+    ```
+
+    **Default:** `2`
+  </Accordion>
+
+  <Accordion title="network">
+    Enable or disable all networking features.
+
+    ```ini
+    # network yes
+    ```
+
+    **Default:** `yes`
+  </Accordion>
+
+  <Accordion title="restricted-network">
+    Restrict networking so that only root may use `--interface`, `--net=ethXXX`, and `--netfilter`. Regular users are limited to `--net=none`.
+
+    Requires `network yes`.
+
+    ```ini
+    # restricted-network no
+    ```
+
+    **Default:** `no`
+  </Accordion>
+
+  <Accordion title="netfilter-default">
+    Override the built-in default netfilter configuration used when `--netfilter` is passed without a file argument. The file must be in `iptables-save` / `iptables-restore` format.
+
+    ```ini
+    # netfilter-default /etc/iptables/iptables.rules
+    ```
+
+    **Default:** none (built-in filter is used)
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Features
+
+<AccordionGroup>
+  <Accordion title="bind">
+    Enable or disable `bind` mount support. Bind mounts are only usable as root.
+
+    ```ini
+    # bind yes
+    ```
+
+    **Default:** `yes`
+  </Accordion>
+
+  <Accordion title="chroot">
+    Enable or disable `chroot` support.
+
+    ```ini
+    # chroot no
+    ```
+
+    **Default:** `no`
+  </Accordion>
+
+  <Accordion title="dbus">
+    Enable or disable D-Bus handling via `xdg-dbus-proxy`.
+
+    ```ini
+    # dbus yes
+    ```
+
+    **Default:** `yes`
+  </Accordion>
+
+  <Accordion title="file-transfer">
+    Enable or disable the `--get` / `--put` file transfer feature.
+
+    ```ini
+    # file-transfer yes
+    ```
+
+    **Default:** `yes`
+  </Accordion>
+
+  <Accordion title="join">
+    Allow regular users to join running sandboxes by name or PID. Root can always join.
+
+    ```ini
+    # join yes
+    ```
+
+    **Default:** `yes`
+  </Accordion>
+
+  <Accordion title="userns">
+    Enable or disable user namespace support.
+
+    ```ini
+    # userns yes
+    ```
+
+    **Default:** `yes`
+  </Accordion>
+
+  <Accordion title="x11">
+    Enable or disable X11 sandboxing support (Xephyr, Xpra, Xvfb).
+
+    ```ini
+    # x11 yes
+    ```
+
+    **Default:** `yes`
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Private directories
+
+<AccordionGroup>
+  <Accordion title="private-bin">
+    Enable or disable the `private-bin` feature, which builds a minimal `/bin` in a temporary filesystem.
+
+    ```ini
+    # private-bin yes
+    ```
+
+    **Default:** `yes`
+  </Accordion>
+
+  <Accordion title="private-bin-no-local">
+    Remove `/usr/local` directories from the `private-bin` search path.
+
+    ```ini
+    # private-bin-no-local no
+    ```
+
+    **Default:** `no`
+  </Accordion>
+
+  <Accordion title="private-cache">
+    Enable or disable the `private-cache` feature, which mounts an empty tmpfs over `~/.cache`.
+
+    ```ini
+    # private-cache yes
+    ```
+
+    **Default:** `yes`
+  </Accordion>
+
+  <Accordion title="private-etc">
+    Enable or disable the `private-etc` feature, which builds a minimal `/etc` in a temporary filesystem.
+
+    ```ini
+    # private-etc yes
+    ```
+
+    **Default:** `yes`
+  </Accordion>
+
+  <Accordion title="private-home">
+    Enable or disable the `private-home` feature, which builds a temporary home directory.
+
+    ```ini
+    # private-home yes
+    ```
+
+    **Default:** `yes`
+  </Accordion>
+
+  <Accordion title="private-lib">
+    Enable or disable the `private-lib` feature, which builds a minimal `/lib` directory.
+
+    ```ini
+    # private-lib no
+    ```
+
+    **Default:** `no`
+  </Accordion>
+
+  <Accordion title="private-opt">
+    Enable or disable the `private-opt` feature, which builds a minimal `/opt` in a temporary filesystem.
+
+    ```ini
+    # private-opt yes
+    ```
+
+    **Default:** `yes`
+  </Accordion>
+
+  <Accordion title="private-srv">
+    Enable or disable the `private-srv` feature, which builds a minimal `/srv` in a temporary filesystem.
+
+    ```ini
+    # private-srv yes
+    ```
+
+    **Default:** `yes`
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Security
+
+<AccordionGroup>
+  <Accordion title="force-nonewprivs">
+    Force the `NO_NEW_PRIVS` prctl for all sandboxes. This prevents sandboxed processes from gaining additional privileges through SUID binaries or file capabilities, mitigating privilege escalation through Firejail's own features.
+
+    ```ini
+    # force-nonewprivs no
+    ```
+
+    **Default:** `no`
+  </Accordion>
+
+  <Accordion title="seccomp">
+    Enable or disable seccomp syscall filtering.
+
+    ```ini
+    # seccomp yes
+    ```
+
+    **Default:** `yes`
+  </Accordion>
+
+  <Accordion title="seccomp-filter-add">
+    Add extra rules to the default seccomp filter using the same syntax as `--seccomp=`. Multiple syscalls are comma-separated; prefix with `!` to allow a normally-blocked call.
+
+    ```ini
+    # seccomp-filter-add !chroot,kcmp,mincore
+    ```
+
+    **Default:** none
+  </Accordion>
+
+  <Accordion title="seccomp-error-action">
+    Action taken when a blocked syscall is attempted. Options:
+
+    | Value | Behavior |
+    |-------|----------|
+    | `kill` | Kill the process |
+    | `log` | Allow but log the attempt (requires Linux 4.14+) |
+    | `EPERM` | Return permission error (default) |
+    | `ENOSYS` | Return "not implemented" error |
+
+    ```ini
+    # seccomp-error-action EPERM
+    ```
+
+    **Default:** `EPERM`
+  </Accordion>
+
+  <Accordion title="seccomp-log">
+    Log seccomp violation messages to syslog even when the program is allowed to continue (requires Linux 4.14+).
+
+    ```ini
+    # seccomp-log no
+    ```
+
+    **Default:** `no`
+  </Accordion>
+
+  <Accordion title="tracelog">
+    Enable auditing of blacklisted file and directory access. A message is sent to syslog whenever a sandboxed program attempts to access a blacklisted path.
+
+    ```ini
+    # tracelog no
+    ```
+
+    **Default:** `no`
+  </Accordion>
+
+  <Accordion title="apparmor">
+    Enable AppArmor confinement using the `firejail-default` profile.
+
+    ```ini
+    # apparmor yes
+    ```
+
+    **Default:** `yes`
+  </Accordion>
+
+  <Accordion title="whitelist-disable-topdir">
+    Disable whitelist top-level directories in addition to those disabled by default. Provide a comma-separated list of absolute paths.
+
+    ```ini
+    # whitelist-disable-topdir /etc,/usr/etc
+    ```
+
+    **Default:** none
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Browser
+
+<AccordionGroup>
+  <Accordion title="browser-allow-drm">
+    Allow DRM (Digital Rights Management) playback in browsers.
+
+    <Warning>
+      DRM requires additional privileges. Enable only if you need DRM content (e.g., Netflix, Spotify).
+    </Warning>
+
+    ```ini
+    # browser-allow-drm no
+    ```
+
+    **Default:** `no`
+  </Accordion>
+
+  <Accordion title="browser-disable-u2f">
+    Disable U2F hardware security key support in browsers.
+
+    ```ini
+    # browser-disable-u2f yes
+    ```
+
+    **Default:** `yes`
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## X11
+
+<AccordionGroup>
+  <Accordion title="xephyr-screen">
+    Screen resolution for `--x11=xephyr`. Run `xrandr` to list resolutions available on your system.
+
+    ```ini
+    # xephyr-screen 800x600
+    ```
+
+    Common values: `640x480`, `800x600`, `1024x768`, `1280x1024`
+
+    **Default:** `800x600`
+  </Accordion>
+
+  <Accordion title="xephyr-extra-params">
+    Extra command-line parameters passed to the Xephyr server.
+
+    ```ini
+    # xephyr-extra-params -keybd ephyr,,,xkbmodel=evdev
+    # xephyr-extra-params -grayscale
+    ```
+
+    **Default:** none
+  </Accordion>
+
+  <Accordion title="xephyr-window-title">
+    Show the Firejail window title in the Xephyr window.
+
+    ```ini
+    # xephyr-window-title yes
+    ```
+
+    **Default:** `yes`
+  </Accordion>
+
+  <Accordion title="xpra-attach">
+    Enable the `--attach` switch for the Xpra `start` command. Only enable if your Xpra version supports it.
+
+    ```ini
+    # xpra-attach no
+    ```
+
+    **Default:** `no`
+  </Accordion>
+
+  <Accordion title="xpra-extra-params">
+    Extra command-line parameters passed to the Xpra server.
+
+    ```ini
+    # xpra-extra-params --dpi 96
+    ```
+
+    **Default:** none
+  </Accordion>
+
+  <Accordion title="xvfb-screen">
+    Screen resolution and color depth for `--x11=xvfb`. The third dimension is color depth; use `24` unless you have a specific reason to change it.
+
+    ```ini
+    # xvfb-screen 800x600x24
+    ```
+
+    Common values: `640x480x24`, `800x600x24`, `1024x768x24`, `1280x1024x24`
+
+    **Default:** `800x600x24`
+  </Accordion>
+
+  <Accordion title="xvfb-extra-params">
+    Extra command-line parameters passed to the Xvfb server.
+
+    ```ini
+    # xvfb-extra-params -pixdepths 8 24 32
+    ```
+
+    **Default:** none
+  </Accordion>
+</AccordionGroup>

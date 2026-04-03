@@ -1,0 +1,149 @@
+---
+title: "Desktop integration"
+description: "Automatically sandbox applications launched from the desktop, terminal, or file manager using firecfg."
+---
+
+Firecfg is the desktop integration utility for Firejail. It creates symbolic links in `/usr/local/bin` that point to `/usr/bin/firejail`, so any program launched by name — from a terminal, desktop menu, or file manager — is automatically sandboxed.
+
+## How it works
+
+When a symlink named `firefox` exists at `/usr/local/bin/firefox` and `/usr/local/bin` appears before `/usr/bin` in `$PATH`, typing `firefox` or clicking its desktop icon invokes `firejail /usr/bin/firefox` transparently. Firejail then loads the matching security profile automatically.
+
+```bash
+$ which -a firefox
+/usr/local/bin/firefox   # symlink → /usr/bin/firejail
+/usr/bin/firefox         # real binary
+```
+
+Use `firejail --tree` to confirm a program is running inside a sandbox:
+
+```bash
+$ firejail --tree
+1189:netblue:firejail /usr/bin/firefox
+  1190:netblue:firejail /usr/bin/firefox
+    1221:netblue:/usr/lib/firefox/firefox
+```
+
+## Setting up integration
+
+<Steps>
+  <Step title="Fix PulseAudio shared memory (optional)">
+    Some PulseAudio versions use shared memory in a way that conflicts with PID
+    namespaces. Run the following as your normal user to create a corrected
+    PulseAudio client configuration:
+
+    ```bash
+    firecfg --fix-sound
+    ```
+
+    <Note>
+      Log out and log back in after running `--fix-sound` for the changes to
+      take effect. This is only needed if you experience sound problems.
+    </Note>
+  </Step>
+
+  <Step title="Create symlinks and fix desktop files">
+    Run firecfg as root to create symlinks in `/usr/local/bin` for all
+    supported applications and to fix `.desktop` files in
+    `$HOME/.local/share/applications/`:
+
+    ```bash
+    sudo firecfg
+    ```
+
+    Sample output:
+
+    ```
+    /usr/local/bin/firefox created
+    /usr/local/bin/vlc created
+    /usr/local/bin/transmission-gtk created
+    [...]
+    ```
+  </Step>
+
+  <Step title="Verify the links">
+    List all Firejail symbolic links that firecfg created:
+
+    ```bash
+    firecfg --list
+    ```
+
+    ```
+    /usr/local/bin/firefox
+    /usr/local/bin/vlc
+    /usr/local/bin/transmission-gtk
+    [...]
+    ```
+  </Step>
+</Steps>
+
+## Managing which apps are sandboxed
+
+Firecfg reads two sources to build the list of programs it links:
+
+1. `/etc/firejail/firecfg.d/*.conf` — drop-in configuration files, parsed in alphabetical order.
+2. `/etc/firejail/firecfg.config` — the default list shipped with Firejail.
+
+In addition, firecfg automatically creates a symlink for any `PROGRAM.profile` found in `~/.config/firejail/`.
+
+<Tip>
+  Leave `/etc/firejail/firecfg.config` unmodified. Put all customizations in
+  files under `/etc/firejail/firecfg.d/` so they survive package updates.
+</Tip>
+
+### Configuration file syntax
+
+Each line in a configuration file is one of:
+
+| Line format | Meaning |
+|-------------|---------|
+| `# comment` | Ignored |
+| `programname` | Create a symlink for this program |
+| `!programname` | Do **not** create a symlink for this program |
+
+### Adding a custom application
+
+Create a drop-in file to add an app that is not in the default list:
+
+```bash
+# /etc/firejail/firecfg.d/10-custom.conf
+myprog
+```
+
+Then re-run `sudo firecfg` to apply the change.
+
+### Excluding an application
+
+To prevent firecfg from sandboxing a program (for example, a text editor that
+needs unrestricted file access), add an exclusion to a drop-in file:
+
+```bash
+# /etc/firejail/firecfg.d/10-custom.conf
+!gedit
+!kate
+```
+
+## Running firecfg after installing new software
+
+The symlinks are static — they are not updated automatically when you install
+new programs. Re-run `sudo firecfg` after installing software to pick up any
+newly supported applications.
+
+## Uninstalling desktop integration
+
+To remove all Firejail symlinks from `/usr/local/bin`:
+
+```bash
+sudo firecfg --clean
+```
+
+```
+/usr/local/bin/firefox removed
+/usr/local/bin/vlc removed
+[...]
+```
+
+<Warning>
+  After running `--clean`, applications will launch without sandboxing until
+  you run `sudo firecfg` again.
+</Warning>

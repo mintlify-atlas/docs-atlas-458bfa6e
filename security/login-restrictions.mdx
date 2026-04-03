@@ -1,0 +1,139 @@
+---
+title: "Login restrictions"
+description: "How to use Firejail as a restricted login shell and configure per-user sandbox arguments with /etc/firejail/login.users."
+---
+
+Firejail can act as a restricted login shell, automatically sandboxing users as soon as they log in. Combined with `/etc/firejail/login.users`, this lets administrators enforce per-user sandbox policies without requiring users to invoke Firejail manually.
+
+## Making Firejail the login shell
+
+Replace `/bin/bash` (or another shell) with `/usr/bin/firejail` in `/etc/passwd` for each user you want to restrict. When the user logs in, Firejail starts as the shell and applies its sandbox before executing the user's real shell.
+
+You can set the login shell when creating a user or on an existing account:
+
+```bash
+# Set shell at account creation
+adduser --shell /usr/bin/firejail username
+
+# Change shell for an existing user
+usermod --shell /usr/bin/firejail username
+```
+
+Or edit `/etc/passwd` directly and replace the shell field:
+
+```text
+username:x:1001:1001::/home/username:/usr/bin/firejail
+```
+
+<Warning>
+When Firejail is set as the login shell, the user cannot bypass the sandbox without root access. Test your configuration thoroughly before locking out a user account.
+</Warning>
+
+## Configuring per-user sandbox arguments
+
+`/etc/firejail/login.users` defines additional Firejail arguments to apply when a specific user logs in through a Firejail restricted shell. The format is:
+
+```text
+user_name: arguments
+```
+
+### Examples
+
+Disable all networking and restrict to Unix sockets for `netblue`:
+
+```text
+netblue: --net=none --protocol=unix
+```
+
+Apply a private home directory to any user whose name starts with `user`:
+
+```text
+user*: --private
+```
+
+Wildcard patterns match multiple usernames. The example above applies `--private` to `user1`, `user2`, `user3`, and so on.
+
+### Full example configuration
+
+```text
+# /etc/firejail/login.users - restricted user shell configuration
+#
+# Format:
+#   user_name: arguments
+#
+# Wildcards are supported in the user name field.
+#
+# Example - disable networking for a specific user:
+netblue: --net=none --protocol=unix
+#
+# Example - apply --private to all users matching user*:
+user*: --private
+```
+
+<Note>
+The extra arguments are inserted into the Firejail command line only when Firejail was started as a login shell. They have no effect when Firejail is invoked directly on the command line.
+</Note>
+
+## Controlling who can run Firejail at all
+
+`/etc/firejail/firejail.users` is a separate file that controls which users are permitted to use the Firejail SUID executable at all. `root` is always allowed; `nobody` is never allowed.
+
+If the file does not exist, all users can run Firejail. If the file exists, only the users listed in it can use the sandbox. Users not in the list will have Firejail attempt to run the program without sandboxing instead.
+
+### File format
+
+One username per line:
+
+```text
+dustin
+lucas
+mike
+eleven
+```
+
+### Managing the file with firecfg
+
+```bash
+# Add specific users
+sudo firecfg --add-users dustin lucas mike eleven
+
+# Add the current user (also creates the file if it does not exist)
+sudo firecfg
+```
+
+### Alternative: group-based access control
+
+Instead of using `firejail.users`, you can restrict access to the Firejail binary at the filesystem level by creating a dedicated group:
+
+<Steps>
+  <Step title="Create the firejail group">
+    ```bash
+    sudo addgroup --system firejail
+    ```
+  </Step>
+  <Step title="Assign the binary to the group">
+    ```bash
+    sudo chown root:firejail /usr/bin/firejail
+    sudo chmod 4750 /usr/bin/firejail
+    ```
+  </Step>
+  <Step title="Add users to the group">
+    ```bash
+    sudo usermod -aG firejail username
+    ```
+
+    Only members of the `firejail` group can now execute the binary.
+  </Step>
+</Steps>
+
+<Tip>
+The group-based approach is enforced at the filesystem level and does not require `/etc/firejail/firejail.users` to exist. Both approaches can coexist, but the group check takes precedence — if the binary is mode 4750 and owned by group `firejail`, a user not in that group cannot run Firejail regardless of what `firejail.users` says.
+</Tip>
+
+## Related files
+
+| File | Purpose |
+|------|---------|
+| `/etc/firejail/login.users` | Per-user Firejail arguments for restricted login shells |
+| `/etc/firejail/firejail.users` | List of users permitted to run Firejail |
+| `/usr/bin/firejail` | The Firejail SUID executable |

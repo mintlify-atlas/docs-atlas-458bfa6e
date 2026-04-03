@@ -1,0 +1,87 @@
+---
+title: "jailcheck"
+description: "Reference for jailcheck, a utility to test and validate running Firejail sandboxes."
+---
+
+## Synopsis
+
+```bash
+sudo jailcheck [OPTIONS] [directory ...]
+```
+
+## Description
+
+`jailcheck` attaches itself to all sandboxes started by the current user and runs a series of security tests on each one. It helps verify that your sandbox configuration is working correctly and identify potential weaknesses.
+
+Must be run with `sudo` or `doas`.
+
+### Tests performed
+
+| Test | Description |
+|------|-------------|
+| **Virtual directories** | Lists the main virtual directories installed by the sandbox (built by `--private*` and `--whitelist`). |
+| **Noexec test** | Inserts executable programs into `/home`, `/tmp`, and `/var/tmp` and attempts to run them from inside the sandbox. Reports if any directory allows execution. |
+| **Read access test** | Creates test files in directories specified on the command line and tries to read them from inside the sandbox. Tests `~/.ssh` and `~/.gnupg` by default. |
+| **AppArmor test** | Checks whether AppArmor confinement is active. |
+| **Seccomp test** | Checks whether seccomp filtering is active. |
+| **Networking test** | Reports whether network access is enabled or disabled. |
+
+## Options
+
+| Option | Description |
+|--------|-------------|
+| `[directory ...]` | Additional directories in the user home to test for read access. `~/.ssh` and `~/.gnupg` are always tested. |
+| `--debug` | Print debug messages. |
+| `--version` | Print program version and exit. |
+| `-?`, `--help` | Print options and exit. |
+
+## Output format
+
+For each detected sandbox, jailcheck prints:
+
+```
+PID:USER:Sandbox Name:Command
+```
+
+Followed by the test results, including virtual directory list and any warnings.
+
+## Example output
+
+```console
+$ sudo jailcheck
+2014:netblue::firejail /usr/bin/gimp
+   Virtual dirs: /tmp, /var/tmp, /dev, /usr/share,
+   Warning: I can run programs in /home/netblue
+   Networking: disabled
+
+2055:netblue::firejail /usr/bin/ssh -X netblue@example.com
+   Virtual dirs: /var/tmp, /dev, /usr/share, /run/user/1000,
+   Warning: I can read ~/.ssh
+   Networking: enabled
+
+26090:netblue::/usr/bin/firejail /opt/firefox/firefox
+   Virtual dirs: /home/netblue, /tmp, /var/tmp, /dev, /etc, /usr/share,
+                 /run/user/1000,
+   Networking: enabled
+
+26160:netblue:tor:firejail --private=~/tor-browser ./start-tor
+   Warning: AppArmor not enabled
+   Virtual dirs: /home/netblue, /tmp, /var/tmp, /dev, /etc, /bin,
+                 /usr/share, /run/user/1000,
+   Warning: I can run programs in /home/netblue
+   Networking: enabled
+```
+
+### Interpreting warnings
+
+| Warning | Meaning | Fix |
+|---------|---------|-----|
+| `I can run programs in /home/netblue` | The home directory is not mounted with `noexec`. | Add `--private-home=` or `include disable-exec.inc` to the profile. |
+| `I can read ~/.ssh` | The `.ssh` directory is accessible inside the sandbox. | Add `blacklist ~/.ssh` or `include disable-common.inc` to the profile. |
+| `AppArmor not enabled` | AppArmor is not active for this sandbox. | Add `apparmor` to the profile, or enable AppArmor support at build time. |
+
+## See also
+
+- [firejail](/reference/firejail) — the main sandbox command
+- [firemon](/reference/firemon) — live sandbox monitoring
+- [Security model](/security/security-model) — understanding Firejail's security guarantees

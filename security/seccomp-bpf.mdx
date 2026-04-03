@@ -1,0 +1,195 @@
+---
+title: "seccomp-bpf filtering"
+description: "How Firejail uses seccomp-bpf to intercept and block dangerous system calls, and how to customize the filter per sandbox."
+---
+
+seccomp-bpf (Secure Computing with Berkeley Packet Filter) is a Linux kernel feature that allows a process to install a filter program that is evaluated on every system call it makes. If the filter rejects a call, the kernel can return an error, kill the process, or log the event — all before the system call executes. Firejail uses this mechanism to block system calls that are rarely needed by applications but commonly exploited.
+
+<Note>
+seccomp-bpf requires a Linux kernel with `CONFIG_SECCOMP` and `CONFIG_SECCOMP_FILTER` enabled. Firejail will report at startup if seccomp-bpf support is present.
+</Note>
+
+## Enabling the default filter
+
+The `--seccomp` flag enables Firejail's built-in default blocklist. The default group is `@default-nodebuggers` (when `--allow-debuggers` is not set), which blocks calls such as `modify_ldt`, `perf_event_open`, `process_vm_writev`, `_sysctl`, and various obsolete and privileged syscalls.
+
+```bash
+firejail --seccomp firefox
+```
+
+When `--seccomp` is active, `--nonewprivs` is also enabled automatically. This prevents child processes from gaining new privileges through `execve`, meaning that calling a SUID binary inside the sandbox does not result in a privilege increase.
+
+Firejail prints seccomp violations to the audit log when the kernel is compiled with `CONFIG_AUDIT`.
+
+### Available syscall groups
+
+Firejail defines named groups to make filter construction easier:
+
+| Group | Description |
+|-------|-------------|
+| `@default` | Default blocklist (allows debuggers) |
+| `@default-nodebuggers` | Default blocklist (blocks `ptrace` and `process_vm_readv`) |
+| `@aio` | Async I/O syscalls |
+| `@basic-io` | Basic I/O operations |
+| `@clock` | Clock and time syscalls |
+| `@debug` | Debugging syscalls |
+| `@file-system` | Filesystem operations |
+| `@ipc` | IPC syscalls |
+| `@module` | Kernel module syscalls |
+| `@mount` | Mount syscalls |
+| `@network-io` | Network I/O |
+| `@privileged` | Privileged operations |
+| `@process` | Process management |
+| `@raw-io` | Raw I/O (iopl, ioperm, etc.) |
+| `@setuid` | UID/GID change syscalls |
+
+Full group contents are listed in `/usr/share/doc/firejail/syscalls.txt`. You can also list them at runtime:
+
+```bash
+firejail --debug-syscalls
+firejail --debug-syscall-groups
+```
+
+## Customizing the filter
+
+### Adding syscalls to block
+
+Use `--seccomp=syscall,...` to enable the default filter and also block additional syscalls or groups:
+
+```bash
+# Block utime, utimensat, and utimes in addition to the default list
+firejail --seccomp=utime,utimensat,utimes firefox
+
+# Block the entire @clock group plus mkdir and unlinkat
+firejail --seccomp=@clock,mkdir,unlinkat transmission-gtk
+
+# Block the @ipc group but keep pipe and pipe2 allowed
+firejail '--seccomp=@ipc,!pipe,!pipe2' audacious
+```
+
+Syscalls can also be referenced by number with a `$` prefix:
+
+```bash
+# $165 is mount on x86_64
+firejail --seccomp='$165' myapp
+```
+
+### Removing syscalls from the default list
+
+Prefix a syscall with `!` to exclude it from the blocklist (allow it even if the default list would block it):
+
+```bash
+firejail '--seccomp=!pipe,!pipe2' myapp
+```
+
+### `--seccomp.drop`
+
+Use `--seccomp.drop` to block specific syscalls without starting from the default list:
+
+```bash
+firejail --seccomp.drop=utime,utimensat,utimes,@clock myapp
+```
+
+### `--seccomp.keep`
+
+Use `--seccomp.keep` to build an allowlist — all syscalls not explicitly listed are blocked. The syscalls in `@default-keep` (`prctl`, `execve`, `execveat`) required by Firejail itself are handled with a preload library:
+
+```bash
+firejail --seccomp.keep=poll,select,read,write,... transmission-gtk
+```
+
+<Warning>
+Allowlist filters (`--seccomp.keep`) are very restrictive. Most applications require a long list of syscalls. Test thoroughly before deploying.
+</Warning>
+
+### Blocking secondary architectures
+
+On amd64 systems, `--seccomp.block-secondary` blocks i386 and x32 system calls and prevents changing the execution domain via `personality(2)`:
+
+```bash
+firejail --seccomp.block-secondary myapp
+```
+
+## Error actions
+
+When a blocked syscall is intercepted, Firejail's default action is to return `EPERM` to the process. You can change this globally or per syscall.
+
+### Global error action
+
+```bash
+# Return ENOSYS instead of EPERM for all blocked calls
+firejail --seccomp-error-action=ENOSYS myapp
+
+# Kill the process on any blocked syscall
+firejail --seccomp-error-action=kill myapp
+
+# Log the attempt without killing (reduces containment but allows tighter filters)
+firejail --seccomp-error-action=log myapp
+```
+
+<Note>
+`--seccomp-error-action=log` weakens containment slightly because the process continues running after a blocked syscall. However, it can enable tighter allowlist filters by not terminating applications that make occasional harmless calls to blocked syscalls.
+</Note>
+
+### Per-syscall error actions
+
+Append `:errno`, `:kill`, or `:log` to individual syscall names:
+
+```bash
+# Return ENOENT for unlinkat, EPERM for everything else blocked
+firejail --seccomp=unlinkat:ENOENT,utimensat,utimes myapp
+
+# Kill on utimensat, return default error on utimes
+firejail --seccomp.drop=utimensat:kill,utimes myapp
+```
+
+## Additional seccomp-based protections
+
+### `--memory-deny-write-execute`
+
+Installs a seccomp filter that blocks attempts to create memory mappings that are simultaneously writable and executable, prevents making existing mappings executable, and blocks executable shared memory creation. The filter examines the arguments of `mmap`, `mmap2`, `mprotect`, `pkey_mprotect`, and `memfd_create`:
+
+```bash
+firejail --memory-deny-write-execute myapp
+```
+
+<Note>
+`shmat` is not implemented as a system call on some platforms (including i386) and cannot be handled by seccomp-bpf. The `--memory-deny-write-execute` filter does not cover it on those platforms.
+</Note>
+
+### `--restrict-namespaces`
+
+Installs a seccomp filter that prevents the sandboxed process from creating new namespaces. This blocks privilege escalation techniques that rely on user namespace creation:
+
+```bash
+# Block all namespace types
+firejail --restrict-namespaces myapp
+
+# Block only user and network namespace creation
+firejail --restrict-namespaces=user,net myapp
+```
+
+Supported namespace types: `cgroup`, `ipc`, `net`, `mnt`, `pid`, `time`, `user`, `uts`.
+
+<Warning>
+The filter cannot inspect `clone3` syscall arguments and responds to all `clone3` calls with `ENOSYS` when `--restrict-namespaces` is active.
+</Warning>
+
+## Inspecting an active filter
+
+Use `firemon --seccomp` or `firejail --seccomp.print` to inspect the raw BPF filter installed for a running sandbox:
+
+```bash
+# Start a named sandbox
+firejail --name=browser --seccomp firefox &
+
+# Print the BPF filter by name
+firejail --seccomp.print=browser
+
+# Print by PID
+firejail --list
+# 3272:netblue::firejail --seccomp firefox
+firejail --seccomp.print=3272
+```
+
+The output shows the raw BPF bytecode with load, jump, and return instructions, which can be used to verify that the expected syscalls are blocked.

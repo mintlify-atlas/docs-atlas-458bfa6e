@@ -1,0 +1,402 @@
+---
+title: "firejail"
+description: "Complete command-line reference for the firejail sandbox program."
+---
+
+## Synopsis
+
+```bash
+firejail [OPTIONS] [program and arguments]
+firejail [OPTIONS] --appimage [OPTIONS] appimage-file [arguments]
+firejail {--list | --netstats | --top | --tree}
+firejail {--bandwidth=name|pid} bandwidth-command
+```
+
+## Description
+
+`firejail` is an SUID sandbox program that reduces the risk of security breaches by restricting the running environment of untrusted applications using Linux namespaces, seccomp-bpf, and Linux capabilities.
+
+Without any options, the sandbox uses a new mount namespace (with system directories read-only), and new PID and UTS namespaces. Only `/home` and `/tmp` are writable by default.
+
+Upon execution, Firejail looks for a matching profile in `~/.config/firejail/`, then `/etc/firejail/`. If none is found, a default restrictive profile is applied. Use `--noprofile` to disable profile loading.
+
+<Note>
+  Always use the full path to the program (e.g., `firejail /usr/bin/firefox`) to avoid firejail-in-firejail issues.
+</Note>
+
+## Options
+
+<AccordionGroup>
+
+<Accordion title="Profile and sandbox mode">
+
+| Option | Description |
+|--------|-------------|
+| `--profile=filename` | Load a specific profile file. |
+| `--profile=name` | Load a named profile from `~/.config/firejail/` or `/etc/firejail/`. |
+| `--noprofile` | Disable automatic profile loading; use a minimal default sandbox. |
+| `--build` | Build a whitelisted profile by observing the running application. Profile is printed to stdout. |
+| `--build=profile-file` | Same as `--build` but saves the profile to a file. |
+| `--name=name` | Assign a name to the sandbox (for use with `--join`, `--top`, etc.). |
+| `--join=name\|pid` | Join an existing sandbox by name or PID. |
+| `--ignore=option` | Ignore a specific option set in a profile. |
+| `--quiet` | Suppress output messages. |
+| `--debug` | Print debug messages. |
+
+```bash
+# Use a specific profile
+firejail --profile=/etc/firejail/firefox.profile /usr/bin/firefox
+
+# Sandbox without any profile
+firejail --noprofile /usr/bin/vlc
+
+# Name a sandbox for later reference
+firejail --name=browser /usr/bin/firefox &
+firejail --join=browser
+```
+
+</Accordion>
+
+<Accordion title="Filesystem isolation">
+
+| Option | Description |
+|--------|-------------|
+| `--private` | Mount a temporary private home directory in `/tmp`. |
+| `--private=dir` | Use the specified directory as the private home. |
+| `--private-home=list` | Allow only the listed files/directories from the real home directory. |
+| `--private-etc=list` | Populate a private `/etc` with only the specified files/directories. |
+| `--private-bin=list` | Populate a private `/bin` with only the specified programs. |
+| `--private-lib` | Build a private `/lib` based on the application's library dependencies. |
+| `--private-tmp` | Mount a private `/tmp` directory. |
+| `--private-opt=list` | Build a private `/opt`. |
+| `--private-srv=list` | Build a private `/srv`. |
+| `--private-cache` | Temporary private `~/.cache` directory. |
+| `--private-dev` | Private `/dev` with a limited set of devices. |
+| `--whitelist=path` | Allow access to the specified path (home directory whitelisting). |
+| `--blacklist=path` | Make a file or directory inaccessible inside the sandbox. |
+| `--noblacklist=path` | Remove a blacklist from an inherited profile. |
+| `--read-only=path` | Mount the path read-only. |
+| `--noexec=path` | Mount the path with noexec flag. |
+| `--bind=file1,file2` | Bind-mount file1 on top of file2 (root only). |
+| `--mkdir=dir` | Create a directory inside the sandbox. |
+| `--mkfile=file` | Create a file inside the sandbox. |
+| `--writable-etc` | Mount `/etc` writable. |
+| `--writable-var` | Mount `/var` writable. |
+| `--disable-mnt` | Disable `/mnt`, `/media`, `/run/mount`, and `/run/media`. |
+
+```bash
+# Private home with specific files allowed
+firejail --private-home=.mozilla,Downloads /usr/bin/firefox
+
+# Private /etc with only needed config files
+firejail --private-etc=fonts,ssl /usr/bin/curl https://example.com
+
+# Blacklist sensitive directories
+firejail --blacklist=~/.ssh --blacklist=~/.gnupg /usr/bin/gimp
+```
+
+</Accordion>
+
+<Accordion title="Network sandboxing">
+
+| Option | Description |
+|--------|-------------|
+| `--net=interface` | Enable a new network namespace with a virtual interface connected to the host via a bridge. |
+| `--net=none` | Disable all network access. |
+| `--netfilter` | Enable a default iptables firewall in the new network namespace. |
+| `--netfilter=file` | Use the specified iptables rules file. |
+| `--dns=address` | Set DNS server address for the sandbox network. |
+| `--hostname=name` | Set the hostname inside the sandbox. |
+| `--ip=address` | Assign an IP address to the sandbox virtual interface. |
+| `--mac=address` | Set the MAC address of the sandbox virtual interface. |
+| `--bandwidth=name\|pid` | Apply traffic shaping (see Traffic Shaping section). |
+| `--interface=name` | Move a network interface into the sandbox. |
+| `--net=bridge_name` | Connect to an existing network bridge. |
+
+```bash
+# Disable network completely
+firejail --net=none /usr/bin/gimp
+
+# New network namespace with ethernet bridge
+firejail --net=eth0 /usr/bin/firefox
+
+# Custom DNS inside sandboxed network
+firejail --net=eth0 --dns=1.1.1.1 /usr/bin/firefox
+```
+
+</Accordion>
+
+<Accordion title="Security restrictions">
+
+| Option | Description |
+|--------|-------------|
+| `--seccomp` | Enable the default seccomp-bpf system call filter. |
+| `--seccomp=syscall1,syscall2` | Add system calls to the seccomp blacklist. |
+| `--seccomp=!syscall` | Remove a syscall from the default blacklist. |
+| `--seccomp.drop=list` | Drop specific syscalls. |
+| `--seccomp.keep=list` | Keep only the listed syscalls (whitelist mode). |
+| `--caps` | Enable the default Linux capabilities filter. |
+| `--caps.drop=all` | Drop all capabilities (recommended for GUI apps). |
+| `--caps.drop=cap1,cap2` | Drop specific capabilities. |
+| `--caps.keep=cap1,cap2` | Keep only the listed capabilities. |
+| `--noroot` | Use a user namespace to map the current user to a non-root identity. |
+| `--nonewprivs` | Set the `no_new_privs` flag (prevents privilege escalation). |
+| `--memory-deny-write-execute` | Deny creating writable and executable memory mappings. |
+| `--restrict-namespaces` | Restrict namespace operations inside the sandbox. |
+| `--apparmor` | Enable AppArmor confinement with the `firejail-default` profile. |
+| `--apparmor=profile` | Enable AppArmor confinement with a custom profile. |
+| `--protocol=list` | Restrict allowed socket protocols (e.g., `unix,inet,inet6`). |
+| `--rlimit-nofile=n` | Set the maximum number of open files. |
+| `--rlimit-nproc=n` | Set the maximum number of processes. |
+| `--rlimit-fsize=n` | Set the maximum file size. |
+| `--cpu=list` | Set CPU affinity for the sandbox. |
+
+```bash
+# Maximum security for an untrusted app
+firejail --caps.drop=all --seccomp --nonewprivs --private /usr/bin/vlc
+
+# Allow debuggers inside the sandbox
+firejail --allow-debuggers strace -f /usr/bin/myapp
+```
+
+</Accordion>
+
+<Accordion title="X11 and display">
+
+| Option | Description |
+|--------|-------------|
+| `--x11=xephyr` | Start a new Xephyr X11 server and run the application inside it. |
+| `--x11=xpra` | Start a rootless Xpra X11 server. |
+| `--x11=xvfb` | Start a headless Xvfb server. |
+| `--x11=none` | Block all access to X11 (sets `DISPLAY` to an invalid value). |
+| `--xephyr-screen=WxH` | Set the Xephyr screen resolution (default 800x600). |
+| `--no3d` | Disable 3D hardware acceleration. |
+| `--nodvd` | Disable DVD and audio CD access. |
+| `--nou2f` | Disable U2F hardware tokens. |
+| `--notv` | Disable DVB TV cards. |
+
+```bash
+# Run in isolated X11 window
+firejail --x11=xephyr /usr/bin/firefox
+
+# Headless rendering
+firejail --x11=xvfb /usr/bin/myapp
+```
+
+</Accordion>
+
+<Accordion title="DBus sandboxing">
+
+| Option | Description |
+|--------|-------------|
+| `--dbus-user=none` | Disable access to the session DBus. |
+| `--dbus-user=filter` | Enable session DBus filtering (requires xdg-dbus-proxy). |
+| `--dbus-user.own=name` | Allow the app to own a well-known name on the session bus. |
+| `--dbus-user.talk=name` | Allow the app to talk to a well-known name on the session bus. |
+| `--dbus-user.see=name` | Allow the app to see a bus name without communicating. |
+| `--dbus-system=none` | Disable access to the system DBus. |
+| `--dbus-system=filter` | Enable system DBus filtering. |
+| `--dbus-system.own=name` | Allow owning a name on the system bus. |
+| `--dbus-system.talk=name` | Allow talking to a name on the system bus. |
+
+```bash
+# Disable DBus completely
+firejail --dbus-user=none --dbus-system=none /usr/bin/gimp
+
+# Filter session bus — allow only notifications
+firejail --dbus-user=filter \
+  --dbus-user.talk=org.freedesktop.Notifications /usr/bin/myapp
+```
+
+</Accordion>
+
+<Accordion title="AppImage support">
+
+| Option | Description |
+|--------|-------------|
+| `--appimage` | Sandbox an AppImage application. Enables `nonewprivs` and default capabilities filter automatically. |
+
+```bash
+firejail --appimage krita-5.0-x86_64.appimage
+firejail --appimage --profile=krita krita-5.0-x86_64.appimage
+firejail --quiet --appimage --private krita-5.0-x86_64.appimage
+```
+
+<Note>
+  When using both `--appimage` and `--profile`, specify `--appimage` first so that `?HAS_APPIMAGE` conditionals in the profile evaluate correctly.
+</Note>
+
+</Accordion>
+
+<Accordion title="Monitoring">
+
+| Option | Description |
+|--------|-------------|
+| `--list` | List all active sandboxes. |
+| `--top` | Display a live top-like view of sandboxes sorted by CPU usage. |
+| `--tree` | Print a process tree of all sandboxed processes. |
+| `--netstats` | Display live network statistics for sandboxes with network namespaces. |
+| `--caps.print=name\|pid` | Print the capabilities filter of a running sandbox. |
+| `--seccomp.print=name\|pid` | Print the seccomp filter of a running sandbox. |
+| `--apparmor.print=name\|pid` | Print the AppArmor status of a running sandbox. |
+| `--cpu.print=name\|pid` | Print CPU affinity of a running sandbox. |
+
+```bash
+# List all running sandboxes
+firejail --list
+# Output: 1617:netblue:/usr/bin/firejail /usr/bin/firefox-esr
+
+# Live monitoring
+firejail --top
+
+# Check capabilities of a named sandbox
+firejail --name=browser /usr/bin/firefox &
+firejail --caps.print=browser
+```
+
+</Accordion>
+
+<Accordion title="File transfer">
+
+| Option | Description |
+|--------|-------------|
+| `--ls=name\|pid dir_or_filename` | List files inside a sandbox. |
+| `--get=name\|pid filename` | Copy a file from a sandbox to the current directory. |
+| `--put=name\|pid src dst` | Copy a file from the host into a sandbox. |
+| `--cat=name\|pid filename` | Print the content of a file inside a sandbox. |
+
+```bash
+firejail --ls=browser /home/user/Downloads
+firejail --get=browser /home/user/Downloads/report.pdf
+```
+
+</Accordion>
+
+<Accordion title="Traffic shaping">
+
+Set or clear bandwidth limits for a sandbox with a new network namespace:
+
+```bash
+# Set download to 1000 KB/s, upload to 500 KB/s
+firejail --bandwidth=browser set eth0 1000 500
+
+# Clear rate limits
+firejail --bandwidth=browser clear eth0
+
+# Show current limits
+firejail --bandwidth=browser status
+```
+
+</Accordion>
+
+<Accordion title="Landlock filesystem restrictions">
+
+Landlock is a Linux security module (kernel 5.13+) that allows unprivileged processes to restrict their own filesystem access. Firejail supports Landlock as an additional sandboxing layer on top of mount namespaces.
+
+<Note>
+  Landlock support is experimental. Compile Firejail with `--enable-landlock` and ensure your kernel has Landlock enabled (`lsm=apparmor,landlock` in kernel command line, or check `/sys/kernel/security/`).
+</Note>
+
+| Option | Description |
+|--------|-------------|
+| `--landlock.enforce` | Enforce the active Landlock ruleset. Without this, other `--landlock.*` options have no effect. |
+| `--landlock.fs.read=path` | Allow read access to path. |
+| `--landlock.fs.write=path` | Allow write access to path. |
+| `--landlock.fs.execute=path` | Allow execution of files under path. |
+| `--landlock.fs.makeipc=path` | Allow creation of named pipes and Unix sockets under path. |
+| `--landlock.fs.makedev=path` | Allow creation of block/character devices under path. |
+| `--ignore=landlock.enforce` | Disable Landlock enforcement even if set in a profile. |
+
+```bash
+# Allow read-only access to filesystem, write only to /home, execute from /usr
+firejail --landlock.fs.read=/ --landlock.fs.write=/home \
+  --landlock.fs.execute=/usr --landlock.enforce /usr/bin/mc
+
+# Restrict file manager to read /media, write /home
+firejail --landlock.enforce --landlock.fs.read=/media \
+  --landlock.fs.read=/home --landlock.fs.write=/home /usr/bin/thunar
+```
+
+</Accordion>
+
+<Accordion title="Tracing and output">
+
+| Option | Description |
+|--------|-------------|
+| `--trace` | Trace system calls and file accesses made by the sandboxed process (printed to stdout). |
+| `--trace=filename` | Save trace output to a file. |
+| `--output=logfile` | Redirect sandbox stdout and stderr to a log file. |
+| `--output-stderr=logfile` | Redirect sandbox stderr to a log file. |
+| `--tracelog` | Enable audit logging of blacklisted file accesses to syslog. |
+| `--scan` | Enable file system scanning and print a warning for each file with unusual permissions. |
+| `--timeout=hh:mm:ss` | Kill the sandbox after the specified time limit. |
+| `--tab` | Enable the TIOCSTI exploit mitigation (terminal injection protection). |
+
+```bash
+# Trace file access for debugging
+firejail --trace /usr/bin/myapp
+
+# Save trace to file
+firejail --trace=/tmp/myapp.trace /usr/bin/myapp
+
+# Kill sandbox after 1 hour
+firejail --timeout=01:00:00 /usr/bin/myapp
+
+# Log to file instead of terminal
+firejail --output=/tmp/sandbox.log /usr/bin/myapp
+```
+
+</Accordion>
+
+<Accordion title="Miscellaneous">
+
+| Option | Description |
+|--------|-------------|
+| `--env=name=value` | Set an environment variable inside the sandbox. |
+| `--rmenv=name` | Remove an environment variable from the sandbox. |
+| `--tmpfs=dir` | Mount a tmpfs filesystem on the specified directory. |
+| `--oom=value` | Set the OOM score adjustment for the sandboxed process (-1000 to 1000). |
+| `--machine-id` | Enable a random `/etc/machine-id` inside the sandbox. |
+| `--hostname-randomize` | Assign a random hostname to the sandbox. |
+| `--allusers` | Make all home directories visible (by default only the current user's home is visible). |
+| `--allow-bwrap` | Allow bubblewrap (`bwrap`) to run inside the sandbox. |
+| `--allow-debuggers` | Allow `strace`, `gdb`, and other debuggers inside the sandbox (requires kernel 4.8+). |
+| `--shutdown=name\|pid` | Shut down the sandbox identified by name or PID. |
+| `--join-or-start=name` | Join an existing named sandbox, or start a new one if none exists. |
+| `--deterministic-exit-code` | Use the exit code of the first child process. |
+| `--version` | Print version and exit. |
+| `--help` | Print help and exit. |
+
+</Accordion>
+
+</AccordionGroup>
+
+## Usage examples
+
+```bash
+# Sandbox Firefox with its default profile
+firejail /usr/bin/firefox
+
+# Sandbox VLC with no network and private tmp
+firejail --net=none --private-tmp /usr/bin/vlc
+
+# Sandbox a server as root
+sudo firejail --caps /etc/init.d/nginx start
+
+# Run a game with no capabilities and seccomp
+firejail --caps.drop=all --seccomp /usr/bin/warzone2100
+
+# Sandbox an AppImage
+firejail --appimage Krita-5.0-x86_64.appimage
+
+# Use the profile builder to create a profile
+firejail --build=vlc.profile /usr/bin/vlc ~/Videos/test.mp4
+```
+
+## See also
+
+- [firemon](/reference/firemon) — sandbox monitoring
+- [firecfg](/reference/firecfg) — desktop integration
+- [jailcheck](/reference/jailcheck) — sandbox compliance testing
+- [Profile syntax](/reference/profile-syntax) — writing custom profiles
+- [firejail.config](/reference/firejail-config) — system-wide configuration

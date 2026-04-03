@@ -1,122 +1,85 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "Firejail",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#4462ec",
+    "light": "#9bacf4",
+    "dark": "#9b9b9b"
   },
-  "favicon": "/favicon.svg",
+  "favicon": "https://media.brand.dev/3d633f14-50d4-4ab5-9064-b8e731291ac2.png",
+  "logo": {
+    "light": "https://media.brand.dev/5128cc7b-7192-4c76-946a-af10c1f36ed7.png",
+    "dark": "https://media.brand.dev/5128cc7b-7192-4c76-946a-af10c1f36ed7.png"
+  },
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/netblue30/firejail"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/netblue30/firejail"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Get Started",
             "pages": [
-              "index",
-              "quickstart",
-              "development"
+              "introduction",
+              "installation",
+              "quickstart"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Guides",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "guides/desktop-integration",
+              "guides/security-profiles",
+              "guides/network-sandboxing",
+              "guides/filesystem-isolation",
+              "guides/x11-sandboxing",
+              "guides/dbus-sandboxing"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Security",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
-            ]
-          },
-          {
-            "group": "AI tools",
-            "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "security/security-model",
+              "security/seccomp-bpf",
+              "security/linux-capabilities",
+              "security/login-restrictions"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Command Reference",
             "pages": [
-              "api-reference/introduction"
+              "reference/firejail",
+              "reference/firemon",
+              "reference/firecfg",
+              "reference/jailcheck"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Configuration",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "reference/firejail-config",
+              "reference/profile-syntax",
+              "reference/global-includes"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

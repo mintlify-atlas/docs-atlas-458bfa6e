@@ -1,0 +1,103 @@
+---
+title: "Introduction"
+description: "Learn what Firejail is, how it works, and what trade-offs to consider before using it."
+---
+
+Firejail is a SUID sandbox program that reduces the risk of security breaches by restricting the running environment of untrusted applications. Written in C with virtually no dependencies, it runs on any Linux computer with a 3.x kernel or newer and can sandbox servers, graphical applications, and even user login sessions.
+
+## How it works
+
+Firejail creates a restricted environment for each sandboxed process by combining multiple Linux kernel security features:
+
+<CardGroup cols={3}>
+  <Card title="Linux namespaces" icon="layer-group">
+    Gives each sandboxed process its own private view of the mount table, process table, network stack, UTS, IPC, and optionally user namespaces — isolating it from the rest of the system.
+  </Card>
+  <Card title="seccomp-bpf" icon="filter">
+    Restricts which system calls a process can make using the kernel's Berkeley Packet Filter, blocking dangerous syscalls at the kernel level before they reach the kernel.
+  </Card>
+  <Card title="Linux capabilities" icon="key">
+    Drops Linux capabilities so that even root processes inside the sandbox cannot perform privileged operations on the host system.
+  </Card>
+  <Card title="AppArmor integration" icon="shield">
+    Optionally applies an AppArmor profile (`firejail-default`) on top of the sandbox for additional mandatory access control.
+  </Card>
+  <Card title="SELinux integration" icon="lock">
+    Works inside SELinux environments and supports SELinux label management when built with `--enable-selinux`.
+  </Card>
+  <Card title="Control groups" icon="server">
+    Integrates with Linux Control Groups (cgroups) for resource accounting and limiting CPU, memory, and I/O.
+  </Card>
+</CardGroup>
+
+### Default filesystem
+
+Without any profile, Firejail builds a new mount namespace where the main system directories (`/etc`, `/var`, `/usr`, `/bin`, `/sbin`, `/lib`, and variants) are mounted read-only. Only `/home` and `/tmp` remain writable. Profiles narrow this further — whitelisting specific paths and applying private home directories, private `/tmp`, and more.
+
+### Security profiles
+
+Firejail ships with over 900 built-in security profiles for common applications such as Firefox, Chromium, VLC, and Transmission. On launch, Firejail looks for a profile in `~/.config/firejail/` first, then in `/etc/firejail/`, and falls back to a restrictive default profile if none is found.
+
+## Platform requirements
+
+| Requirement | Details |
+|---|---|
+| Linux kernel | 3.x or newer (4.x or newer recommended for full feature support) |
+| Architecture | Any architecture supported by the Linux kernel |
+| Dependencies | Virtually none — the core tool is a single C binary |
+| seccomp header | `/usr/include/linux/seccomp.h` must be present at build time |
+
+<Note>
+  Some features require newer kernels. For example, `--allow-debuggers` (ptrace whitelisting) requires kernel 4.8 or newer. Landlock self-restriction requires kernel 5.13 or newer.
+</Note>
+
+## What Firejail protects against
+
+- **Filesystem access**: Sandboxed processes are confined to a limited view of the filesystem. Profiles can use private home directories, private `/tmp`, whitelists, and blacklists to tightly control what files an application can read or write.
+- **Network access**: You can assign a separate network namespace, restrict or disable networking entirely, or shape bandwidth per sandbox.
+- **Privilege escalation via syscalls**: seccomp-bpf blocks dangerous system calls before they reach the kernel, reducing the attack surface significantly.
+- **Capability abuse**: Linux capabilities are dropped so sandboxed processes cannot perform privileged operations even if they run as root inside the sandbox.
+- **Inter-process interference**: PID and IPC namespace isolation prevents sandboxed processes from seeing or signaling processes outside the sandbox.
+
+## Security trade-offs
+
+<Warning>
+  Firejail is currently implemented as an SUID binary. If a malicious or compromised user account manages to exploit a bug in Firejail itself, that could ultimately lead to privilege escalation to root. To mitigate this, only allow trusted users to run Firejail. See `firejail-users(5)` for details.
+</Warning>
+
+Firejail is not a complete security solution. Consider these trade-offs:
+
+- **SUID attack surface**: Because Firejail runs as root briefly (SUID), any vulnerability in the sandboxing code could be leveraged for privilege escalation. The project takes security bugs seriously and provides a responsible disclosure path.
+- **Kernel exposure**: All sandbox features rely on the Linux kernel. Kernel vulnerabilities can bypass sandbox restrictions.
+- **Profile quality**: A poorly written profile offers little protection. The built-in profiles vary in strictness; review profiles for sensitive use cases.
+- **No GUI isolation by default**: X11 applications can still interact with other X11 windows unless X11 isolation is explicitly configured.
+
+For a detailed discussion of the security and usability trade-offs, see the [upstream discussion #4601](https://github.com/netblue30/firejail/discussions/4601).
+
+## Alternatives
+
+<Warning>
+  Snap and Flatpak packages are **not supported** by Firejail. These packaging formats have their own native sandboxing and management tools and will not work when sandboxed with Firejail.
+</Warning>
+
+Firejail occupies a different niche from container-based or packaging-layer sandboxes:
+
+| Tool | Approach | Firejail compatibility |
+|---|---|---|
+| **Snap** | Packaging + sandboxing via AppArmor/seccomp | Not supported — do not wrap Snap apps with Firejail |
+| **Flatpak** | Packaging + sandboxing via Bubblewrap/portals | Not supported — do not wrap Flatpak apps with Firejail |
+| **Bubblewrap** | Unprivileged sandbox primitive | Firejail replaces `/usr/bin/bwrap` with a no-op inside the sandbox by default |
+| **Docker / Podman** | Container isolation | Different use case; Firejail targets per-application desktop sandboxing |
+
+Firejail's strength is low-overhead, profile-driven sandboxing of regular (non-packaged) desktop applications with no daemons, no complex configuration files, and no socket connections.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install Firejail on your Linux distribution or build it from source.
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Sandbox your first application in a few steps.
+  </Card>
+</CardGroup>

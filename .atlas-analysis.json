@@ -1,0 +1,100 @@
+{
+  "projectType": "cli-tool",
+  "projectName": "Firejail",
+  "projectDescription": "A lightweight Linux sandbox program that uses namespaces, seccomp-bpf, and capabilities to isolate untrusted applications from the rest of the system.",
+  "theme": "aspen",
+  "primaryColor": "#4462ec",
+  "lightColor": "#9bacf4",
+  "darkColor": "#9b9b9b",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/desktop-integration",
+              "guides/security-profiles",
+              "guides/network-sandboxing",
+              "guides/filesystem-isolation",
+              "guides/x11-sandboxing",
+              "guides/dbus-sandboxing"
+            ]
+          },
+          {
+            "group": "Security",
+            "pages": [
+              "security/security-model",
+              "security/seccomp-bpf",
+              "security/linux-capabilities",
+              "security/login-restrictions"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Reference",
+        "groups": [
+          {
+            "group": "Command Reference",
+            "pages": [
+              "reference/firejail",
+              "reference/firemon",
+              "reference/firecfg",
+              "reference/jailcheck"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "reference/firejail-config",
+              "reference/profile-syntax",
+              "reference/global-includes"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Linux namespace isolation (mount, PID, network, UTS, IPC, user)",
+    "seccomp-bpf system call filtering",
+    "Linux capabilities management",
+    "Over 1300 pre-built application security profiles",
+    "Network sandboxing with virtual interfaces and traffic shaping",
+    "Filesystem whitelisting and private directories",
+    "AppArmor and SELinux integration",
+    "X11 display isolation via Xephyr, Xpra, or Xvfb",
+    "DBus sandboxing with fine-grained filtering",
+    "Landlock filesystem access control",
+    "Desktop integration via firecfg",
+    "Sandbox monitoring with firemon"
+  ],
+  "publicApiSurface": [
+    "firejail [OPTIONS] [program and arguments]",
+    "firejail --profile=filename.profile program",
+    "firejail --list",
+    "firejail --top",
+    "firejail --tree",
+    "firejail --netstats",
+    "firejail --bandwidth=name|pid set network download upload",
+    "firejail --build=profile-file program",
+    "firejail --net=interface",
+    "firejail --private",
+    "firejail --seccomp",
+    "firejail --caps.drop=all",
+    "firejail --appimage appimage-file",
+    "firemon [OPTIONS] [PID]",
+    "firecfg [OPTIONS]",
+    "jailcheck [OPTIONS]"
+  ]
+}

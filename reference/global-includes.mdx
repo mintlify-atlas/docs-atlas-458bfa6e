@@ -1,0 +1,368 @@
+---
+title: "Global include files"
+description: "Reference for Firejail's built-in .inc files: what each one does, how to use them in profiles, and how to customize them with .local files."
+---
+
+Firejail ships a set of reusable `.inc` files in `/etc/firejail/`. These files contain collections of related `blacklist`, `whitelist`, `noexec`, and similar directives that profiles include to apply broad security policies without duplicating rules.
+
+<Note>
+  All `.inc` files are overwritten during software updates. Use `.local` files for persistent customizations (see [Customizing include files](#customizing-include-files)).
+</Note>
+
+---
+
+## Using include files in profiles
+
+Reference an include file by name in a profile:
+
+```
+include disable-common.inc
+include whitelist-common.inc
+```
+
+Bare filenames are searched in `~/.config/firejail/` first, then `/etc/firejail/`. You can also use macros:
+
+```
+include ${CFG}/disable-common.inc
+```
+
+---
+
+## disable-\*.inc files
+
+These files use `blacklist`, `blacklist-nolog`, and `read-only` to deny access to sensitive or unnecessary paths.
+
+### disable-common.inc
+
+The most widely used include file. Blacklists a broad set of sensitive files and directories across the home directory, `/etc`, `/var`, and system paths. Categories covered:
+
+- **History files and clipboard managers** — shell history (`.*_history`), clipboard daemons
+- **X11 session autostart** — `~/.Xresources`, `~/.config/autostart`, WM-specific autostart dirs
+- **KDE configuration** — kwin, plasma, kwallet, kscreenlocker configs
+- **GNOME** — gnome-shell data, gvfs-metadata, dconf database (read-only)
+- **Systemd and OpenRC** — `systemctl`, `journalctl`, service dirs, init.d
+- **Virtualization** — VirtualBox, GNOME Boxes, libvirt, Podman/OCI containers
+- **Encryption tools** — VeraCrypt, TrueCrypt, zuluCrypt
+- **Package managers** — apt, dpkg, pacman
+- **System directories** — `/sbin`, `/usr/sbin`, `/usr/local/sbin`
+- **SUID binaries** — `su`, `sudo`, `mount`, `passwd`, `pkexec`, `newuidmap`, and many others
+- **Network/DNS tools** — `dig`, `nmap`, `ssh`, `netstat`, `tcpdump`, etc.
+- **Credential files** — `~/.ssh`, `~/.gnupg`, `~/.netrc`, `*.kdbx`, `~/.pki`, cloud provider credentials
+- **Sandbox managers** — flatpak, snap, bubblejail
+- **Terminal emulators** with sandbox-escape potential — gnome-terminal, guake, ptyxis, etc.
+- **Startup / rc files** — `.bashrc`, `.zshrc`, `.profile`, and similar (read-only)
+- **Path binaries** — `~/.local/bin`, `~/.cargo/bin`, etc. (read-only)
+- **Auth token environment variables** — removes `GH_TOKEN`, `GITHUB_TOKEN`, `CARGO_REGISTRY_TOKEN`, etc.
+
+```
+include disable-common.inc
+```
+
+Key entries:
+
+```
+blacklist ${HOME}/.ssh
+blacklist ${HOME}/.gnupg
+blacklist ${HOME}/.config/autostart
+blacklist /etc/shadow
+blacklist ${PATH}/sudo
+blacklist ${PATH}/ssh*
+read-only ${HOME}/.bashrc
+rmenv GH_TOKEN
+rmenv GITHUB_TOKEN
+```
+
+### disable-devel.inc
+
+Blacklists development tools and compiler toolchains that are rarely needed at runtime:
+
+```
+include disable-devel.inc
+```
+
+### disable-exec.inc
+
+Applies `noexec`, `nodev`, and `nosuid` flags to directories that should not contain executables:
+
+```
+include disable-exec.inc
+```
+
+Covered paths:
+
+```
+noexec /media
+noexec /mnt
+noexec /run/media
+noexec /run/mount
+noexec ${HOME}
+noexec ${RUNUSER}
+noexec /dev/mqueue
+noexec /dev/shm
+noexec /run/shm
+noexec /tmp
+noexec /var
+```
+
+### disable-interpreters.inc
+
+Blacklists scripting language interpreters (Python, Perl, Ruby, Node.js, Lua, etc.) from the sandbox's `$PATH`. Use the corresponding `allow-*.inc` file to re-enable individual interpreters when the application needs them.
+
+```
+include disable-interpreters.inc
+
+# Re-enable Python for an app that needs it
+include allow-python3.inc
+```
+
+### disable-proc.inc
+
+Restricts access to sensitive `/proc` entries such as `/proc/config.gz`.
+
+```
+include disable-proc.inc
+```
+
+### disable-programs.inc
+
+Blacklists application data directories in `$HOME` for hundreds of programs. This prevents a sandboxed application from reading or modifying another application's data. The list includes browser profiles, email clients, cryptocurrency wallets, IDEs, chat applications, media players, and more.
+
+```
+include disable-programs.inc
+```
+
+### disable-shell.inc
+
+Blacklists common shell binaries (`bash`, `sh`, `dash`, `zsh`, etc.) from the sandbox.
+
+```
+include disable-shell.inc
+```
+
+### disable-write-mnt.inc
+
+Applies write protection to removable-media mount points. Keep in sync with `disable-exec.inc`; remove this include if you set `disable-mnt`.
+
+```
+include disable-write-mnt.inc
+```
+
+### disable-x11.inc
+
+Blacklists X11 sockets and display server access for programs that should have no GUI:
+
+```
+include disable-x11.inc
+```
+
+### disable-xdg.inc
+
+Blacklists XDG user directories that are not needed by the sandboxed application.
+
+```
+include disable-xdg.inc
+```
+
+---
+
+## whitelist-\*.inc files
+
+These files define common `whitelist` entries that most graphical and desktop applications need.
+
+### whitelist-common.inc
+
+Whitelists shared resources required by virtually all desktop applications:
+
+- XCompose, Xdefaults, Xauthority
+- ALSA (`~/.asoundrc`) and sndio configuration
+- IBus, MIME associations, PKCS#11
+- XDG user directory config (`user-dirs.dirs`, `user-dirs.locale`)
+- Desktop entries and icon themes (`~/.local/share/applications`, `~/.local/share/icons`)
+- Font configuration and font directories
+- GTK 2/3/4 themes, gtkrc, gnome2
+- Qt/KDE: Kvantum, qt5ct, qt6ct, kdeglobals, kioslaverc, KDE icon themes
+- dconf directory
+- AppImage local data (`~/.local/share/appimagekit`, conditional on `HAS_APPIMAGE`)
+- NixOS user environment (`~/.nix-profile`)
+
+```
+include whitelist-common.inc
+```
+
+### whitelist-var-common.inc
+
+Whitelists common `/var` paths needed by most applications:
+
+```
+include whitelist-var-common.inc
+```
+
+Contents:
+
+```
+whitelist /var/lib/aspell
+whitelist /var/lib/ca-certificates
+whitelist /var/lib/dbus
+whitelist /var/lib/menu-xdg
+whitelist /var/lib/uim
+whitelist /var/cache/fontconfig
+whitelist /var/tmp
+whitelist /var/run
+whitelist /var/lock
+whitelist /var/games
+```
+
+### whitelist-run-common.inc
+
+Whitelists common `/run` paths for system services:
+
+```
+include whitelist-run-common.inc
+```
+
+Contents:
+
+```
+whitelist /run/NetworkManager/resolv.conf
+whitelist /run/avahi-daemon/socket
+whitelist /run/cups/cups.sock
+whitelist /run/dbus/system_bus_socket
+whitelist /run/media
+whitelist /run/resolvconf/resolv.conf
+whitelist /run/systemd/resolve/resolv.conf
+whitelist /run/systemd/resolve/stub-resolv.conf
+whitelist /run/udev/data
+whitelist /run/opengl-driver
+```
+
+### whitelist-runuser-common.inc
+
+Whitelists common `/run/user/$UID` paths for the current user session:
+
+```
+include whitelist-runuser-common.inc
+```
+
+Contents:
+
+```
+whitelist ${RUNUSER}/bus
+whitelist ${RUNUSER}/dconf
+whitelist ${RUNUSER}/gdm/Xauthority
+whitelist ${RUNUSER}/ICEauthority
+whitelist ${RUNUSER}/.mutter-Xwaylandauth.*
+whitelist ${RUNUSER}/pulse/native
+whitelist ${RUNUSER}/pipewire-*
+whitelist ${RUNUSER}/wayland-*
+whitelist ${RUNUSER}/xauth_*
+```
+
+### whitelist-usr-share-common.inc
+
+Whitelists common `/usr/share` paths (locale, icons, themes, fonts, etc.) needed by most applications.
+
+```
+include whitelist-usr-share-common.inc
+```
+
+### whitelist-player-common.inc
+
+Whitelists paths commonly needed by media player applications.
+
+```
+include whitelist-player-common.inc
+```
+
+---
+
+## allow-\*.inc files
+
+These files cancel blacklist rules applied by `disable-*.inc` files, allowing specific runtimes or tools back into the sandbox.
+
+| File | Re-enables |
+|---|---|
+| `allow-bin-sh.inc` | `/bin/sh` (blocked by `disable-shell.inc`) |
+| `allow-common-devel.inc` | Common IDE and development tool paths |
+| `allow-gjs.inc` | GJS JavaScript runtime |
+| `allow-java.inc` | Java runtime (blocked by `disable-devel.inc`) |
+| `allow-lua.inc` | Lua interpreter |
+| `allow-nodejs.inc` | Node.js |
+| `allow-opengl-game.inc` | Distribution-specific OpenGL game wrapper |
+| `allow-perl.inc` | Perl |
+| `allow-php.inc` | PHP |
+| `allow-python2.inc` | Python 2 |
+| `allow-python3.inc` | Python 3 |
+| `allow-ruby.inc` | Ruby |
+| `allow-ssh.inc` | SSH client (blocked by `disable-common.inc`) |
+
+```
+# Example: allow Python 3 in a profile that includes disable-interpreters.inc
+include disable-interpreters.inc
+include allow-python3.inc
+```
+
+---
+
+## globals.local
+
+`globals.local` is a special file included at the top of every profile. It is not overwritten on update and is the recommended place for system-wide customizations that should apply to all sandboxes.
+
+```
+# /etc/firejail/globals.local
+# Applied to every sandbox that includes it
+
+# Force no-new-privileges system-wide
+nonewprivs
+
+# Custom DNS for all sandboxes
+dns 1.1.1.1
+```
+
+Profiles include it as:
+
+```
+include globals.local
+```
+
+---
+
+## Customizing include files
+
+<Warning>
+  `.inc` files in `/etc/firejail/` are overwritten on every Firejail update. Never edit them directly.
+</Warning>
+
+Each `.inc` file automatically includes a corresponding `.local` file at the top. Create the `.local` file to add persistent customizations:
+
+| Include file | Local override file |
+|---|---|
+| `disable-common.inc` | `/etc/firejail/disable-common.local` |
+| `whitelist-common.inc` | `/etc/firejail/whitelist-common.local` |
+| `whitelist-run-common.inc` | `/etc/firejail/whitelist-run-common.local` |
+| `whitelist-runuser-common.inc` | `/etc/firejail/whitelist-runuser-common.local` |
+| `whitelist-var-common.inc` | `/etc/firejail/whitelist-var-common.local` |
+
+Example — allow access to `~/.ssh` in all profiles (normally blacklisted by `disable-common.inc`):
+
+```bash
+# /etc/firejail/disable-common.local
+noblacklist ${HOME}/.ssh
+```
+
+Example — whitelist an extra `/var` path for all sandboxes:
+
+```bash
+# /etc/firejail/whitelist-var-common.local
+whitelist /var/lib/myservice
+```
+
+For per-user customizations, place overrides in `~/.config/firejail/`:
+
+```bash
+# ~/.config/firejail/disable-common.local
+noblacklist ${HOME}/.ssh
+```
+
+<Tip>
+  Per-application overrides belong in `~/.config/firejail/appname.local`, not in the global `.local` files.
+</Tip>

@@ -1,0 +1,128 @@
+---
+title: "Linux capabilities"
+description: "How Firejail uses Linux capabilities to limit what sandboxed root processes can do, and how to drop or keep specific capabilities per sandbox."
+---
+
+Linux capabilities split the traditional all-or-nothing root privilege into a set of distinct, independently controllable units. A process can have a subset of capabilities, allowing it to perform specific privileged operations — such as binding to low-numbered ports — without having full root access. Firejail uses capabilities to constrain what processes running inside a sandbox can do, even when those processes run as root.
+
+See `capabilities(7)` for the complete reference on Linux capability semantics.
+
+## Why capabilities matter in sandboxes
+
+By default, programs run as root have all capabilities enabled. If a sandboxed program running as root exploits a vulnerability to escape the sandbox, it still retains whatever capabilities were allowed. Dropping capabilities before the program starts removes that leverage:
+
+- `CAP_SYS_ADMIN` — required for many host-level operations (mounting filesystems, setting up namespaces, modifying kernel parameters)
+- `CAP_NET_ADMIN` — required for network interface configuration, firewall rules
+- `CAP_SYS_MODULE` — required for loading kernel modules
+- `CAP_SYS_RAWIO` — required for raw I/O port access
+- `CAP_SETUID` / `CAP_SETGID` — required for changing UID/GID
+
+Dropping all of these removes common privilege escalation paths even if the process obtains a root UID inside the sandbox.
+
+## Dropping capabilities
+
+### Drop all capabilities
+
+`--caps.drop=all` drops every capability from the sandbox. This is the recommended option for:
+
+- GUI applications
+- Programs installed from unofficial sources (games, Java programs, etc.)
+- Any program that does not need to perform privileged operations
+
+```bash
+firejail --caps.drop=all /usr/bin/warzone2100
+firejail --caps.drop=all --seccomp --private firefox
+```
+
+### Drop specific capabilities
+
+`--caps.drop=capability,capability,...` removes named capabilities while leaving the rest in place:
+
+```bash
+firejail --caps.drop=net_broadcast,net_admin,net_raw myapp
+```
+
+### Enable the Firejail default capability filter
+
+`--caps` (without further arguments) applies Firejail's built-in partial drop, which removes:
+
+```
+CAP_SYS_MODULE, CAP_SYS_RAWIO, CAP_SYS_BOOT, CAP_SYS_NICE,
+CAP_SYS_TTY_CONFIG, CAP_SYSLOG, CAP_MKNOD, CAP_SYS_ADMIN
+```
+
+```bash
+sudo firejail --caps /etc/init.d/nginx start
+```
+
+This is less strict than `--caps.drop=all` and is designed for system services that need some elevated operations.
+
+## Keeping specific capabilities
+
+`--caps.keep=capability,...` drops all capabilities except those listed. This is useful for services that need a small, known set of privileges:
+
+```bash
+# Allow nginx to bind to port 80 and change UID/GID, drop everything else
+sudo firejail --caps.keep=chown,net_bind_service,setgid,setuid \
+  /etc/init.d/nginx start
+```
+
+<Tip>
+Use `--caps.keep` rather than `--caps.drop` when you know exactly which privileges a service needs. An allowlist is harder to misconfigure than a blocklist.
+</Tip>
+
+## Common capabilities
+
+| Capability | Typical use |
+|------------|-------------|
+| `chown` | Change file ownership |
+| `dac_override` | Bypass file permission checks |
+| `fowner` | Bypass permission checks where file UID must match |
+| `kill` | Send signals to arbitrary processes |
+| `net_admin` | Network interface and routing configuration |
+| `net_bind_service` | Bind to ports below 1024 |
+| `net_raw` | Use raw sockets (ping, packet capture) |
+| `setgid` | Change GID |
+| `setuid` | Change UID |
+| `sys_admin` | Wide range of administrative operations |
+| `sys_chroot` | Use `chroot(2)` |
+| `sys_module` | Load and unload kernel modules |
+| `sys_ptrace` | Trace arbitrary processes |
+| `sys_rawio` | Raw I/O port access |
+
+## Inspecting a sandbox's capabilities
+
+`--caps.print` displays the active capability filter for a running sandbox, identified by name or PID:
+
+```bash
+# Start a named sandbox
+firejail --name=mygame --caps.drop=all /usr/bin/warzone2100 &
+
+# Print by name
+firejail --caps.print=mygame
+
+# Print by PID
+firejail --list
+# 3272:netblue::firejail --private /usr/bin/firefox
+firejail --caps.print=3272
+```
+
+## The `--noroot` user namespace
+
+`--noroot` installs a user namespace with a single user — the current user. Root does not exist in the new namespace. This prevents the sandboxed process from using root-only operations at the kernel level, even if it has UID 0 inside the container:
+
+```bash
+firejail --noroot /usr/bin/firefox
+```
+
+```bash
+$ firejail --noroot
+$ ping google.com
+ping: icmp open socket: Operation not permitted
+```
+
+<Note>
+`--noroot` requires Linux kernel 3.8 or newer. It is not supported with `--chroot` or `--appimage` configurations, or when Firejail is started as root.
+</Note>
+
+`--noroot` complements `--caps.drop=all`: even if capability restrictions are somehow bypassed, the process still operates inside a user namespace where root has no real power on the host.

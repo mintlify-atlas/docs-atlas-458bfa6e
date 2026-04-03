@@ -1,97 +1,95 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "Firejail — Linux Sandbox"
+description: "Protect your Linux system by running applications in lightweight, secure sandboxes using Linux namespaces, seccomp-bpf, and capabilities."
 ---
 
-## Setting up
+Firejail is an SUID sandbox program that reduces the risk of security breaches by restricting the running environment of untrusted applications. Written in C with virtually no dependencies, it runs on any Linux computer with a 3.x kernel or newer and can sandbox servers, graphical applications, and even user login sessions.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install Firejail on Debian, Ubuntu, Fedora, Arch, or build from source.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Sandbox your first application in under a minute.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Security Profiles" icon="shield" href="/guides/security-profiles">
+    Use and customize the 1300+ built-in application profiles.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="Command Reference" icon="terminal" href="/reference/firejail">
+    Full reference for all firejail command-line options.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## How Firejail works
 
-Everything you need to create world-class documentation.
+Firejail creates a restricted environment for each sandboxed process by combining multiple Linux kernel security features:
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
+<CardGroup cols={3}>
+  <Card title="Linux Namespaces" icon="layer-group">
+    Isolates mount, PID, network, UTS, IPC, and user namespaces so sandboxed processes have their own private view of the system.
   </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
+  <Card title="seccomp-bpf" icon="filter">
+    Restricts which system calls a process can make using the kernel's Berkeley Packet Filter, blocking dangerous syscalls at the kernel level.
   </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
+  <Card title="Capabilities" icon="key">
+    Drops Linux capabilities so that even root processes inside the sandbox cannot perform privileged operations on the host system.
   </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+</CardGroup>
 
-## Need inspiration?
+## Start sandboxing
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<Steps>
+  <Step title="Install Firejail">
+    Install Firejail from your distribution's package manager or build from source. See the [installation guide](/installation) for details.
+
+    ```bash
+    sudo apt-get install firejail
+    ```
+  </Step>
+  <Step title="Run an application in a sandbox">
+    Prefix any command with `firejail` to sandbox it. Firejail automatically selects an appropriate security profile.
+
+    ```bash
+    firejail /usr/bin/firefox
+    firejail /usr/bin/vlc
+    firejail /usr/bin/transmission-gtk
+    ```
+  </Step>
+  <Step title="Integrate with your desktop">
+    Run `sudo firecfg` to integrate Firejail with your desktop environment. All supported applications will automatically launch in a sandbox.
+
+    ```bash
+    firecfg --fix-sound
+    sudo firecfg
+    ```
+  </Step>
+  <Step title="Monitor active sandboxes">
+    List all running sandboxes or use the monitoring tool to watch resource usage.
+
+    ```bash
+    firejail --list
+    firemon --top
+    ```
+  </Step>
+</Steps>
+
+## Explore further
+
+<CardGroup cols={2}>
+  <Card title="Desktop integration" icon="desktop" href="/guides/desktop-integration">
+    Automatically sandbox all supported applications through your desktop environment.
+  </Card>
+  <Card title="Network sandboxing" icon="network-wired" href="/guides/network-sandboxing">
+    Isolate network stacks, set up virtual interfaces, and shape traffic.
+  </Card>
+  <Card title="Filesystem isolation" icon="folder-lock" href="/guides/filesystem-isolation">
+    Use private directories and whitelists to limit filesystem access.
+  </Card>
+  <Card title="Security model" icon="shield-halved" href="/security/security-model">
+    Understand the security guarantees and trade-offs of Firejail's design.
+  </Card>
+</CardGroup>
+
+<Note>
+  Firejail requires a Linux kernel version 3.x or newer. Most features require kernel 4.x or newer. Run `firejail --version` to confirm your installation and check feature availability.
+</Note>
